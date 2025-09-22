@@ -1,0 +1,627 @@
+{% extends 'estructuras/base.html' %}
+
+{% block extra_css %}
+<style type="text/css">
+.searchable-select-container {
+    position: relative;
+}
+
+#circuito-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 1000;
+    border: 1px solid #CBD5E1;
+    border-top: none;
+    border-radius: 0 0 0.375rem 0.375rem;
+    background: white;
+    box-shadow: 0 10px 15px -3px rgba(30, 58, 95, 0.1), 0 4px 6px -2px rgba(30, 58, 95, 0.05);
+    max-width: 100%;
+}
+
+#circuito-dropdown .dropdown-item {
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    border: none;
+    color: #334155;
+    text-decoration: none;
+    display: block;
+    font-size: 0.875rem;
+}
+
+#circuito-dropdown .dropdown-item:hover {
+    background-color: #F1F5F9;
+}
+
+#circuito-dropdown .dropdown-item:active {
+    background-color: #4A9EE0;
+    color: white;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="flex items-center justify-between mb-6">
+    <div>
+        <h1 class="text-2xl font-bold text-primary-700">Proceso de Estructura</h1>
+        <p class="text-gray-600">{{ proceso.get_tipo_estructura_display }}</p>
+    </div>
+    <a href="{% url 'estructuras:index' %}" 
+       class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary">
+        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m0 7h18"></path>
+        </svg>
+        Volver al Inicio
+    </a>
+</div>
+
+<!-- Información del Proceso -->
+<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div>
+            <h3 class="text-sm font-medium text-primary-700">Archivo</h3>
+            <p class="mt-1 text-sm text-gray-900 truncate">{{ proceso.archivo_excel.name }}</p>
+        </div>
+        <div>
+            <h3 class="text-sm font-medium text-primary-700">Estado</h3>
+            <div class="mt-1">
+                {% if proceso.estado == 'COMPLETADO' %}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-accent/10 text-accent-dark">
+                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                        </svg>
+                        {{ proceso.get_estado_display }}
+                    </span>
+                {% elif proceso.estado == 'ERROR' %}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                        </svg>
+                        {{ proceso.get_estado_display }}
+                    </span>
+                {% else %}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                        <svg class="w-3 h-3 mr-1 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        {{ proceso.get_estado_display }}
+                    </span>
+                {% endif %}
+            </div>
+        </div>
+        <div>
+            <h3 class="text-sm font-medium text-primary-700">Fecha de creación</h3>
+            <p class="mt-1 text-sm text-gray-900">{{ proceso.created_at|date:"d/m/Y H:i" }}</p>
+        </div>
+    </div>
+    
+    <div class="mt-6">
+        <div class="flex justify-between items-center mb-2">
+            <h3 class="text-sm font-medium text-primary-700">Progreso</h3>
+            <span class="text-sm text-gray-500" id="registros-text">{{ proceso.registros_procesados }} / {{ proceso.registros_totales }}</span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-3">
+            <div id="progress-bar" class="h-3 bg-gradient-to-r from-secondary to-secondary-light rounded-full transition-all duration-300" data-progress="{{ proceso.progreso_porcentaje }}"></div>
+        </div>
+        <p class="text-xs text-gray-500 mt-1">{{ proceso.progreso_porcentaje }}% completado</p>
+    </div>
+    
+    {% if proceso.errores %}
+    <div class="mt-6 bg-red-50 border border-red-200 rounded-md p-4">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                </svg>
+            </div>
+            <div class="ml-3">
+                <h3 class="text-sm font-medium text-red-800">Errores encontrados</h3>
+                <div class="mt-2 text-sm text-red-700">
+                    <ul class="list-disc list-inside space-y-1">
+                        {% for error in proceso.errores %}
+                        <li>{{ error }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if proceso.estado == 'COMPLETANDO_DATOS' %}
+<!-- Formulario Unificado de Datos Requeridos -->
+<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+    <div class="flex items-center mb-6">
+        <div class="flex-shrink-0">
+            <div class="w-8 h-8 bg-gradient-to-r from-secondary to-secondary-light rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+        </div>
+        <div class="ml-3">
+            <h3 class="text-lg font-semibold text-primary-700">Completar Información Requerida</h3>
+            <p class="text-sm text-gray-500">Complete todos los campos necesarios para generar los archivos de salida</p>
+        </div>
+    </div>
+
+    <!-- Alertas informativas -->
+    {% if not proceso.circuito %}
+    <div class="bg-gradient-to-r from-secondary/10 to-secondary-light/10 border border-secondary/20 rounded-md p-4 mb-4">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-secondary-dark" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                </svg>
+            </div>
+            <div class="ml-3">
+                <p class="text-sm font-medium text-secondary-dark">Circuito requerido</p>
+                <p class="text-sm text-secondary-dark/80 mt-1">Seleccione el circuito al que pertenecen las estructuras procesadas</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if proceso.requiere_definir_propietario and propietarios_info and not propietarios_info.tiene_propietarios %}
+    <div class="bg-gradient-to-r from-warning/10 to-yellow-100/50 border border-warning/20 rounded-md p-4 mb-4">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-warning" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                </svg>
+            </div>
+            <div class="ml-3">
+                <p class="text-sm font-medium text-orange-800">Propietario requerido</p>
+                <p class="text-sm text-orange-700 mt-1">No se encontraron propietarios en el Excel. Columnas buscadas: {{ propietarios_info.columnas_buscadas|join:", " }}</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if proceso.campos_faltantes %}
+    <div class="bg-gradient-to-r from-yellow-50 to-yellow-100/50 border border-yellow-200 rounded-md p-4 mb-4">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                </svg>
+            </div>
+            <div class="ml-3">
+                <p class="text-sm font-medium text-yellow-800">Campos adicionales requeridos</p>
+                <p class="text-sm text-yellow-700 mt-1">Complete los campos que no se encontraron en el archivo Excel</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    <form id="datosRequeridosForm" class="space-y-6">
+        {% csrf_token %}
+        
+        <!-- Sección Circuito -->
+        {% if not proceso.circuito %}
+        <div class="border-b border-gray-200 pb-6">
+            <h4 class="text-md font-medium text-primary-700 mb-4">Circuito</h4>
+            <div>
+                <label for="circuito-search" class="block text-sm font-medium text-primary-700 mb-2">Circuito <span class="text-red-500">*</span></label>
+                <div class="searchable-select-container">
+                    <input type="text" 
+                           id="circuito-search" 
+                           name="circuito"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary"
+                           placeholder="Buscar o seleccionar circuito..."
+                           value="{{ proceso.circuito|default:'' }}"
+                           autocomplete="off"
+                           required>
+                    <div id="circuito-dropdown" class="dropdown-menu" style="display: none; max-height: 200px; overflow-y: auto; width: 100%;">
+                        {% for circuito in circuitos_disponibles %}
+                        <a class="dropdown-item" href="#" data-value="{{ circuito }}">{{ circuito }}</a>
+                        {% endfor %}
+                    </div>
+                </div>
+                <p class="mt-1 text-xs text-gray-500">Escribe para filtrar los circuitos disponibles o selecciona uno de la lista</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Sección Propietario -->
+        {% if proceso.requiere_definir_propietario %}
+        <div class="{% if not proceso.circuito %}border-b border-gray-200 {% endif %}pb-6">
+            <h4 class="text-md font-medium text-primary-700 mb-4">Propietario</h4>
+            <div>
+                <label for="propietario-select" class="block text-sm font-medium text-primary-700 mb-2">Propietario <span class="text-red-500">*</span></label>
+                <select id="propietario-select" 
+                        name="propietario" 
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary"
+                        required>
+                    <option value="">Seleccione un propietario...</option>
+                    {% for propietario in propietarios_predefinidos %}
+                    <option value="{{ propietario }}">{{ propietario }}</option>
+                    {% endfor %}
+                </select>
+                <p class="mt-1 text-xs text-gray-500">Este propietario se asignará a todas las estructuras con porcentaje de propiedad del 100%</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Sección Estado de Salud -->
+        {% if campos_requeridos.estado_salud %}
+        <div class="border-b border-gray-200 pb-6">
+            <h4 class="text-md font-medium text-primary-700 mb-4">Estado de Salud</h4>
+            <div>
+                <label for="estado-salud-select" class="block text-sm font-medium text-primary-700 mb-2">Estado de Salud de las Estructuras <span class="text-red-500">*</span></label>
+                <select id="estado-salud-select" 
+                        name="estado_salud" 
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary"
+                        required>
+                    <option value="">Seleccione el estado de salud...</option>
+                    {% for opcion in opciones_estado_salud %}
+                    <option value="{{ opcion }}"{% if proceso.estado_salud_definido == opcion %} selected{% endif %}>{{ opcion }}</option>
+                    {% endfor %}
+                </select>
+                <p class="mt-1 text-xs text-gray-500">Este estado se asignará a todas las estructuras que no tengan estado de salud definido</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Sección Estado de Estructura -->
+        <div class="border-b border-gray-200 pb-6">
+            <h4 class="text-md font-medium text-primary-700 mb-4">Estado de Estructura</h4>
+            <div>
+                <label for="estado-estructura-select" class="block text-sm font-medium text-primary-700 mb-2">Estado de la Estructura <span class="text-red-500">*</span></label>
+                <select id="estado-estructura-select" 
+                        name="estado_estructura" 
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary"
+                        required>
+                    <option value="">Seleccione el estado...</option>
+                    <option value="OPERACION"{% if proceso.estado_estructura_definido == 'OPERACION' %} selected{% endif %}>OPERACION</option>
+                    <option value="CONSTRUCCION"{% if proceso.estado_estructura_definido == 'CONSTRUCCION' %} selected{% endif %}>CONSTRUCCION</option>
+                    <option value="RETIRADO"{% if proceso.estado_estructura_definido == 'RETIRADO' %} selected{% endif %}>RETIRADO</option>
+                </select>
+                <p class="mt-1 text-xs text-gray-500">Si el Excel trae un estado válido, se usará ese; de lo contrario, se usará el seleccionado aquí</p>
+            </div>
+        </div>
+
+        <!-- Botón de envío -->
+        <div class="pt-4">
+            <button type="submit" class="w-full bg-gradient-to-r from-accent to-accent-light text-white py-3 px-4 rounded-md font-medium hover:from-accent-dark hover:to-accent focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 transition duration-200 flex items-center justify-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                Completar Datos y Generar Archivos
+            </button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+{% if proceso.estado == 'COMPLETADO' %}
+<!-- Archivos Generados -->
+<div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+    <div class="flex items-center mb-4">
+        <div class="flex-shrink-0">
+            <div class="w-8 h-8 bg-gradient-to-r from-accent to-accent-light rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+        </div>
+        <div class="ml-3">
+            <h3 class="text-lg font-semibold text-primary-700">Archivos Generados</h3>
+            <p class="text-sm text-gray-500">El proceso se completó exitosamente. Los archivos están listos para descargar</p>
+        </div>
+    </div>
+    
+    <div class="bg-gradient-to-r from-accent/10 to-accent-light/10 border border-accent/20 rounded-md p-4 mb-4">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <svg class="h-5 w-5 text-accent-dark" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                </svg>
+            </div>
+            <div class="ml-3">
+                <p class="text-sm font-medium text-accent-dark">✅ Proceso completado exitosamente</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <a href="{% url 'estructuras:descargar_archivo' proceso.id 'txt' %}" 
+           class="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-secondary to-secondary-light hover:from-secondary-dark hover:to-secondary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary transition duration-200">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            📄 TXT Nuevo
+        </a>
+        <a href="{% url 'estructuras:descargar_archivo' proceso.id 'xml' %}" 
+           class="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-accent to-accent-light hover:from-accent-dark hover:to-accent focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent transition duration-200">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            📋 XML Nuevo
+        </a>
+        <a href="{% url 'estructuras:descargar_archivo' proceso.id 'norma_txt' %}" 
+           class="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-primary-700 to-primary-600 hover:from-primary-800 hover:to-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-200">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            📄 TXT Norma
+        </a>
+          <a href="{% url 'estructuras:descargar_archivo' proceso.id 'norma_xml' %}" 
+              class="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-primary-700 to-primary-600 hover:from-primary-800 hover:to-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-200">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            📋 XML Norma
+        </a>
+    </div>
+    <!-- Botones 'baja' agregados justo debajo, mismos estilos y simetría -->
+    <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <a href="{% url 'estructuras:descargar_archivo' proceso.id 'txt_baja' %}" 
+           class="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-secondary to-secondary-light hover:from-secondary-dark hover:to-secondary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary transition duration-200">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            📄 TXT   Baja
+        </a>
+        <a href="{% url 'estructuras:descargar_archivo' proceso.id 'xml_baja' %}" 
+           class="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-accent to-accent-light hover:from-accent-dark hover:to-accent focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent transition duration-200">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            📋 XML  Baja
+    </a>
+        <div></div>
+        <div></div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Django template data as data attributes -->
+<div id="proceso-data" 
+     data-id="{{ proceso.id }}"
+     data-estado="{{ proceso.estado }}"
+     data-estado-proceso-url="{% url 'estructuras:estado_proceso' proceso.id %}"
+     data-completar-campos-url="{% url 'estructuras:completar_campos' proceso.id %}"
+     data-csrf-token="{{ csrf_token }}"
+     data-should-auto-update="{% if proceso.estado == 'PROCESANDO' or proceso.estado == 'INICIADO' or proceso.estado == 'CLASIFICANDO' or proceso.estado == 'GENERANDO_ARCHIVOS' %}true{% else %}false{% endif %}"
+     style="display: none;">
+</div>
+
+<script type="text/javascript">
+// Get Django data from data attributes
+const procesoDataElement = document.getElementById('proceso-data');
+const procesoData = {
+    id: procesoDataElement.dataset.id,
+    estado: procesoDataElement.dataset.estado,
+    estadoProcesoUrl: procesoDataElement.dataset.estadoProcesoUrl,
+    completarCamposUrl: procesoDataElement.dataset.completarCamposUrl,
+    csrfToken: procesoDataElement.dataset.csrfToken,
+    shouldAutoUpdate: procesoDataElement.dataset.shouldAutoUpdate === 'true'
+};
+
+// Establecer el progreso inicial de la barra
+const progressBar = document.getElementById('progress-bar');
+if (progressBar) {
+    const progressValue = progressBar.dataset.progress;
+    progressBar.style.width = progressValue + '%';
+}
+
+// Auto-actualizar estado si el proceso no ha terminado
+if (procesoData.shouldAutoUpdate) {
+    let pollCount = 0;
+    const maxPolls = 150; // 5 minutos máximo (150 * 2 segundos)
+    
+    const pollInterval = setInterval(async () => {
+        try {
+            pollCount++;
+            
+            // Detener después del tiempo máximo
+            if (pollCount > maxPolls) {
+                clearInterval(pollInterval);
+                console.log('Tiempo máximo de polling alcanzado');
+                return;
+            }
+            
+            const response = await fetch(procesoData.estadoProcesoUrl);
+            const data = await response.json();
+            
+            // Si el estado cambió a uno final, detener polling y recargar
+            if (data.estado !== procesoData.estado) {
+                clearInterval(pollInterval);
+                location.reload();
+                return;
+            }
+            
+            // Detener polling si el estado es final
+            if (['COMPLETADO', 'ERROR', 'CLASIFICADO'].includes(data.estado)) {
+                clearInterval(pollInterval);
+                return;
+            }
+            
+            // Actualizar progreso sin recargar
+            const progressBar = document.getElementById('progress-bar');
+            if (progressBar && data.progreso !== undefined) {
+                progressBar.style.width = data.progreso + '%';
+            }
+            
+            // Actualizar registros
+            const registrosText = document.querySelector('#registros-text');
+            if (registrosText && data.registros_procesados !== undefined && data.registros_totales !== undefined) {
+                registrosText.textContent = data.registros_procesados + ' / ' + data.registros_totales;
+            }
+            
+        } catch (error) {
+            console.log('Error actualizando estado:', error.message || error);
+            // En caso de error, también detener el polling después de algunos intentos
+            if (pollCount > 10) {
+                clearInterval(pollInterval);
+            }
+        }
+    }, 2000); // Actualizar cada 2 segundos
+}
+
+// Funcionalidad del campo de circuito con búsqueda
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('circuito-search');
+    const dropdown = document.getElementById('circuito-dropdown');
+    
+    if (searchInput && dropdown) {
+        const dropdownItems = dropdown.querySelectorAll('.dropdown-item');
+        
+        // Mostrar/ocultar dropdown
+        searchInput.addEventListener('focus', function() {
+            dropdown.style.display = 'block';
+            filterCircuitos();
+        });
+        
+        // Ocultar dropdown al hacer clic fuera
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.searchable-select-container')) {
+                dropdown.style.display = 'none';
+            }
+        });
+        
+        // Filtrar circuitos mientras se escribe
+        searchInput.addEventListener('input', filterCircuitos);
+        
+        function filterCircuitos() {
+            const searchTerm = searchInput.value.toLowerCase();
+            let visibleCount = 0;
+            
+            dropdownItems.forEach(item => {
+                const text = item.textContent.toLowerCase();
+                if (text.includes(searchTerm)) {
+                    item.style.display = 'block';
+                    visibleCount++;
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+            
+            // Mostrar/ocultar dropdown según resultados
+            dropdown.style.display = visibleCount > 0 ? 'block' : 'none';
+        }
+        
+        // Seleccionar circuito del dropdown
+        dropdownItems.forEach(item => {
+            item.addEventListener('click', function(e) {
+                e.preventDefault();
+                searchInput.value = this.dataset.value;
+                dropdown.style.display = 'none';
+            });
+        });
+    }
+});
+
+// Manejar formulario unificado de datos requeridos
+const datosRequeridosForm = document.getElementById('datosRequeridosForm');
+if (datosRequeridosForm) {
+    datosRequeridosForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        const campos = {};
+        let propietario = null;
+        let estado_salud = null;
+        
+        // Extraer circuito
+        const circuito = formData.get('circuito');
+        if (circuito) {
+            campos['CIRCUITO'] = circuito.trim();
+        }
+        
+        // Extraer propietario
+        propietario = formData.get('propietario');
+        
+        // Extraer estado de salud
+        estado_salud = formData.get('estado_salud');
+        
+        // Extraer estado de estructura
+        let estado_estructura = formData.get('estado_estructura');
+        
+        // Extraer campos faltantes
+        for (const [key, value] of formData.entries()) {
+            if (key.startsWith('campo_')) {
+                const campo = key.replace('campo_', '');
+                campos[campo] = value.trim();
+            }
+        }
+        
+        const btn = e.target.querySelector('button[type="submit"]');
+        const btnText = btn.textContent;
+        btn.disabled = true;
+        btn.innerHTML = '<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Procesando...';
+        
+        try {
+            const requestBody = {};
+            
+            // Agregar campos si existen
+            if (Object.keys(campos).length > 0) {
+                requestBody.campos = campos;
+            }
+            
+            // Agregar propietario si existe
+            if (propietario) {
+                requestBody.propietario = propietario;
+            }
+            
+            // Agregar estado de salud si existe
+            if (estado_salud) {
+                requestBody.estado_salud = estado_salud;
+            }
+            
+            // Agregar estado de estructura si existe
+            if (estado_estructura) {
+                requestBody.estado_estructura = estado_estructura;
+            }
+            
+            const response = await fetch(procesoData.completarCamposUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': procesoData.csrfToken
+                },
+                body: JSON.stringify(requestBody)
+            });
+            
+            if (response.ok) {
+                // Mostrar mensaje de éxito
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'fixed top-4 right-4 bg-gradient-to-r from-accent to-accent-light text-white px-6 py-3 rounded-lg shadow-lg z-50';
+                alertDiv.innerHTML = '✅ Datos completados correctamente';
+                document.body.appendChild(alertDiv);
+                
+                // Remover alerta después de 3 segundos
+                setTimeout(() => {
+                    alertDiv.remove();
+                }, 3000);
+                
+                // Recargar página después de un breve delay
+                setTimeout(() => {
+                    location.reload();
+                }, 1500);
+            } else {
+                const errorText = await response.text();
+                throw new Error(`Error del servidor: ${errorText}`);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+            alertDiv.innerHTML = '❌ Error: ' + (error.message || 'Error desconocido');
+            document.body.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = btnText;
+        }
+    });
+}
+</script>
+{% endblock %}

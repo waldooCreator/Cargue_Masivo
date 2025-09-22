@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Sistema Transformador - Gestión de Estructuras{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Configuración de colores personalizados
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            DEFAULT: '#1E3A5F',
+                            50: '#F0F4F8',
+                            100: '#D6E4ED',
+                            200: '#B8CDE0',
+                            300: '#9BB6D3',
+                            400: '#7E9FC6',
+                            500: '#4A9EE0',
+                            600: '#2D5A87',
+                            700: '#1E3A5F',
+                            800: '#0F1C2E',
+                            900: '#070E17'
+                        },
+                        secondary: {
+                            DEFAULT: '#4A9EE0',
+                            light: '#6BB1E5',
+                            dark: '#3488D1'
+                        },
+                        accent: {
+                            DEFAULT: '#198754',
+                            light: '#20C65F',
+                            dark: '#136843'
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-6 max-w-7xl">
+        <!-- Header -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <div class="w-12 h-12 bg-gradient-to-r from-primary-700 to-primary-600 rounded-lg flex items-center justify-center mr-4">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-3xl font-bold text-primary-700 mb-2">Sistema de Cargue Masivo MDE</h1>
+                        <p class="text-gray-600">Procesamiento de estructuras eléctricas</p>
+                    </div>
+                </div>
+                <div class="hidden md:flex items-center space-x-4">
+                    <div class="text-right">
+                        <div class="text-sm text-gray-500">Estado del Sistema</div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-accent rounded-full"></div>
+                            <span class="font-medium text-accent">Operativo</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        {% block content %}{% endblock %}
+    </div>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
