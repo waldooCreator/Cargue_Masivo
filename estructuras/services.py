@@ -4,6 +4,7 @@ from datetime import datetime
 import os
 import re
 from django.conf import settings
+import oracledb
 # XML utilities are imported where needed inside functions to keep module
 # imports minimal and avoid unused import warnings.
 from .constants import (
@@ -101,6 +102,83 @@ class DataUtils:
         
         return valor_str
     
+
+class OracleHelper:
+    """Helper para consultas a Oracle Database"""
+    
+    # Credenciales Oracle integradas directamente
+    ORACLE_CONFIG = {
+        'user': 'CENS_CONSULTA',
+        'password': 'C3N5C0N5ULT4',
+        'dsn': 'EPM-PO18:1521/GENESTB'
+    }
+    
+    @classmethod
+    def test_connection(cls) -> bool:
+        """
+        Prueba la conexión a Oracle sin ejecutar queries.
+        
+        Returns:
+            True si la conexión es exitosa, False en caso contrario
+        """
+        try:
+            with oracledb.connect(**cls.ORACLE_CONFIG) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT 1 FROM DUAL")
+                    result = cursor.fetchone()
+                    return result is not None
+        except Exception as e:
+            print(f"ERROR conexión Oracle: {str(e)}")
+            return False
+    
+    @classmethod
+    def obtener_coordenadas_por_fid(cls, fid_codigo: str) -> Tuple[str, str]:
+        """
+        Consulta Oracle para obtener coor_gps_lat y coor_gps_lon por G3E_FID.
+        
+        Args:
+            fid_codigo: Código FID a buscar
+            
+        Returns:
+            Tuple con (coor_gps_lat, coor_gps_lon) como strings.
+            Si no se encuentra o hay error, retorna ('', '')
+        """
+        try:
+            # Normalizar FID (eliminar espacios y convertir a string)
+            fid_limpio = str(fid_codigo).strip()
+            if not fid_limpio or fid_limpio.lower() in ('nan', 'none', ''):
+                return ('', '')
+            
+            # Conectar a Oracle
+            with oracledb.connect(**cls.ORACLE_CONFIG) as connection:
+                with connection.cursor() as cursor:
+                    # Query para obtener coordenadas por FID
+                    query = """
+                    SELECT g3e_fid, coor_gps_lat, coor_gps_lon
+                    FROM ccomun c
+                    WHERE g3e_fid = :fid_param
+                    """
+                    
+                    cursor.execute(query, {"fid_param": fid_limpio})
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        g3e_fid, lat, lon = result
+                        # Convertir a string y manejar valores None
+                        lat_str = str(lat) if lat is not None else ''
+                        lon_str = str(lon) if lon is not None else ''
+                        
+                        print(f"DEBUG Oracle: FID {fid_limpio} -> lat={lat_str}, lon={lon_str}")
+                        return (lat_str, lon_str)
+                    else:
+                        print(f"DEBUG Oracle: No se encontró FID {fid_limpio}")
+                        return ('', '')
+                        
+        except Exception as e:
+            print(f"ERROR Oracle consulta FID {fid_codigo}: {str(e)}")
+            # Si hay error de conexión, intentar continuar sin detener el proceso
+            return ('', '')
+
 
 class ExcelProcessor:
     """Procesa archivos Excel extrayendo y normalizando datos de estructura"""
@@ -562,6 +640,77 @@ class FileGenerator:
             pass
 
         return ''
+
+    def _signature_registro(self, registro: Dict):
+        """Construye una firma robusta del registro para detectar duplicados entre NUEVO y BAJA.
+
+        Prioriza UC; si no hay UC, usa (COORDENADA_X, COORDENADA_Y, PROYECTO);
+        si no hay PROYECTO, usa (COORDENADA_X, COORDENADA_Y, ENLACE).
+        Si solo hay coordenadas, usa (COORDENADA_X, COORDENADA_Y).
+
+        Retorna una tupla que identifica el registro, o None si no hay datos suficientes.
+        """
+        if not isinstance(registro, dict):
+            return None
+
+        def norm(v):
+            try:
+                return str(v).strip()
+            except Exception:
+                return ''
+
+        uc = norm(registro.get('UC'))
+        x = norm(registro.get('COORDENADA_X'))
+        y = norm(registro.get('COORDENADA_Y'))
+        proyecto = norm(registro.get('PROYECTO'))
+        enlace = norm(registro.get('ENLACE'))
+
+        if uc:
+            return ('UC', uc)
+        if x and y and proyecto:
+            return ('XYP', x, y, proyecto)
+        if x and y and enlace:
+            return ('XYE', x, y, enlace)
+        if x and y:
+            return ('XY', x, y)
+        return None
+
+    def _indices_con_fid_rep_exactos(self):
+        """
+        Obtiene índices de filas del Excel que tienen valor no vacío en la
+        columna EXACTA 'Código FID_rep'. Ignora otras columnas parecidas
+        (p. ej. 'Código FID\nGIT').
+
+        Returns:
+            Tuple[Set[int], List[Dict]]: (índices_con_fid, datos_excel_crudos)
+        """
+        try:
+            processor = ExcelProcessor(self.proceso)
+            raw_datos, _ = processor.procesar_archivo()
+        except Exception:
+            raw_datos = self.proceso.datos_excel or []
+
+        indices = set()
+        for i, reg in enumerate(raw_datos):
+            if not isinstance(reg, dict):
+                continue
+            # Variantes textuales del mismo encabezado
+            variantes = (
+                'Código FID_rep', 'Codigo FID_rep', 'CODIGO_FID_REP', 'codigo_fid_rep'
+            )
+            hit = False
+            for k in variantes:
+                if k in reg:
+                    v = reg.get(k)
+                    s = '' if v is None else str(v).strip()
+                    if s and s.lower() not in ('nan', 'none'):
+                        indices.add(i)
+                    hit = True
+                    break
+            if hit:
+                continue
+            # Si no encontró variantes exactas, no toma ninguna columna con 'fid' genérico
+        return indices, raw_datos
     
     def _limpiar_valor_para_txt(self, valor):
         """
@@ -841,7 +990,7 @@ class FileGenerator:
         return datos_preparados
 
     def generar_txt(self):
-        """Genera archivo TXT con los datos transformados (estructura completa)"""
+        """Genera archivo TXT con los datos transformados (estructura completa) - SOLO REGISTROS SIN FID_rep"""
         try:
             filename = f"estructuras_{self.proceso.id}.txt"
             filepath = os.path.join(self.base_path, filename)
@@ -852,46 +1001,69 @@ class FileGenerator:
             if not datos_salida:
                 raise Exception("No hay datos transformados para generar archivo TXT")
             
-            # APLICAR PREPARACIÓN FINAL DE DATOS
-            datos_finales = self._preparar_datos_finales(datos_salida)
+            # FILTRADO CRÍTICO: EXCLUIR REGISTROS CON 'Código FID_rep' EXACTO (por índice del Excel)
+            indices_con_fid, raw_datos = self._indices_con_fid_rep_exactos()
+
+            # Construir set de firmas/UC de registros CON FID (para excluir duplicados en TXT NUEVO)
+            firmas_con_fid = set()
+            ucs_con_fid = set()
+            for i in indices_con_fid:
+                if 0 <= i < len(datos_salida):
+                    sig = self._signature_registro(datos_salida[i])
+                    if sig:
+                        firmas_con_fid.add(sig)
+                    uc_val = (str(datos_salida[i].get('UC')).strip() if datos_salida[i].get('UC') is not None else '')
+                    if uc_val:
+                        ucs_con_fid.add(uc_val)
+
+            datos_sin_fid = []
+            total_registros = len(datos_salida)
+            for i, registro in enumerate(datos_salida):
+                if i in indices_con_fid:
+                    print(f"DEBUG generar_txt: Excluyendo fila {i+1} del TXT NUEVO (tiene 'Código FID_rep')")
+                    continue
+                # Excluir además si la firma/UC coincide con alguna marcada para BAJA
+                sig_reg = self._signature_registro(registro)
+                uc_reg = (str(registro.get('UC')).strip() if registro.get('UC') is not None else '')
+                if uc_reg and uc_reg in ucs_con_fid:
+                    print(f"DEBUG generar_txt: Excluyendo fila {i+1} por UC duplicada con BAJA: {uc_reg}")
+                    continue
+                if sig_reg and sig_reg in firmas_con_fid:
+                    print(f"DEBUG generar_txt: Excluyendo fila {i+1} por firma duplicada con BAJA: {sig_reg}")
+                    continue
+                datos_sin_fid.append(registro)
+
+            print(f"DEBUG generar_txt: Filtrados {len(datos_sin_fid)} registros SIN FID de {total_registros} totales")
             
-            # REGLA ESPECIAL PARA FID_ANTERIOR basada en TIPO_PROYECTO
-            # Solo aplica al TXT de expansión, no al XML
-            incluir_fid_anterior = self._debe_incluir_fid_anterior(datos_finales)
+            if not datos_sin_fid:
+                print("ADVERTENCIA: No hay registros sin FID para el TXT NUEVO")
+                # Crear archivo vacío pero con encabezados
+                datos_finales = []
+            else:
+                # APLICAR PREPARACIÓN FINAL DE DATOS solo a registros sin FID
+                datos_finales = self._preparar_datos_finales(datos_sin_fid)
             
-            # Nombres definitivos de encabezados
+            # Los encabezados para TXT NUEVO nunca incluyen FID_ANTERIOR
+            # porque este archivo es solo para registros NUEVOS (sin FID)
             encabezados_base = [
                 'COORDENADA_X', 'COORDENADA_Y', 'GRUPO', 'TIPO', 'CLASE', 'USO', 'ESTADO', 
                 'TIPO_ADECUACION', 'PROPIETARIO', 'PORCENTAJE_PROPIEDAD', 'UBICACION',
                 'CODIGO_MATERIAL', 'FECHA_INSTALACION', 'FECHA_OPERACION', 'PROYECTO',
                 'EMPRESA', 'OBSERVACIONES', 'CLASIFICACION_MERCADO', 'TIPO_PROYECTO',
                 'ID_MERCADO', 'UC', 'ESTADO_SALUD', 'OT_MAXIMO', 'CODIGO_MARCACION',
-                'SALINIDAD'
+                'SALINIDAD', 'ENLACE'
             ]
-            
-            # Agregar FID_ANTERIOR solo si debe incluirse
-            if incluir_fid_anterior:
-                encabezados_base.append('FID_ANTERIOR')
-            
-            encabezados_base.append('ENLACE')
             encabezados = encabezados_base
             
-            # Mapeo de campos internos a encabezados
-            campos_orden_base = [
+            # Mapeo de campos internos a encabezados (sin FID_ANTERIOR)
+            campos_orden = [
                 'COORDENADA_X', 'COORDENADA_Y', 'GRUPO', 'TIPO', 'CLASE', 'USO', 'ESTADO', 
                 'TIPO_ADECUACION', 'PROPIETARIO', 'PORCENTAJE_PROPIEDAD', 'UBICACION',
                 'CODIGO_MATERIAL', 'FECHA_INSTALACION', 'FECHA_OPERACION', 'PROYECTO',
                 'EMPRESA', 'OBSERVACIONES', 'CLASIFICACION_MERCADO', 'TIPO_PROYECTO',
                 'ID_MERCADO', 'UC', 'ESTADO_SALUD', 'OT_MAXIMO', 'CODIGO_MARCACION',
-                'SALINIDAD'
+                'SALINIDAD', 'ENLACE'
             ]
-            
-            # Agregar FID_ANTERIOR solo si debe incluirse
-            if incluir_fid_anterior:
-                campos_orden_base.append('FID_ANTERIOR')
-            
-            campos_orden_base.append('ENLACE')
-            campos_orden = campos_orden_base
 
             with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
                 # Escribir encabezados definitivos separados por |
@@ -917,6 +1089,9 @@ class FileGenerator:
             self._validar_archivo_txt(filepath)
             
             return filename
+            
+        except Exception as e:
+            raise Exception(f"Error generando archivo TXT: {str(e)}")
             
         except Exception as e:
             raise Exception(f"Error generando archivo TXT: {str(e)}")
@@ -1115,12 +1290,47 @@ class FileGenerator:
 
             datos_finales = datos_finales_filtrados
             
+            # 4. CONSULTAR ORACLE PARA OBTENER COORDENADAS GPS
+            print(f"DEBUG: Iniciando consultas Oracle para {len(datos_finales)} registros")
+            for i, registro in enumerate(datos_finales):
+                try:
+                    # Extraer FID del registro
+                    fid_codigo = self._extraer_fid_rep(registro)
+                    if not fid_codigo:
+                        # Intentar con FID_ANTERIOR si existe
+                        fid_codigo = registro.get('FID_ANTERIOR', '')
+                    
+                    if fid_codigo and str(fid_codigo).strip().lower() not in ('', 'nan', 'none'):
+                        # Consultar Oracle para obtener coordenadas
+                        lat, lon = OracleHelper.obtener_coordenadas_por_fid(fid_codigo)
+                        
+                        # Agregar las coordenadas al registro
+                        registro['COOR_GPS_LAT'] = lat
+                        registro['COOR_GPS_LON'] = lon
+                        
+                        if i < 5:  # Solo log de los primeros 5 para no saturar
+                            print(f"DEBUG: Registro {i+1} FID={fid_codigo} -> lat={lat}, lon={lon}")
+                    else:
+                        # No hay FID válido, dejar campos vacíos
+                        registro['COOR_GPS_LAT'] = ''
+                        registro['COOR_GPS_LON'] = ''
+                        if i < 5:
+                            print(f"DEBUG: Registro {i+1} sin FID válido, coordenadas vacías")
+                            
+                except Exception as e:
+                    print(f"ERROR consultando Oracle para registro {i+1}: {str(e)}")
+                    # En caso de error, dejar campos vacíos
+                    registro['COOR_GPS_LAT'] = ''
+                    registro['COOR_GPS_LON'] = ''
+            
+            print(f"DEBUG: Completadas consultas Oracle para {len(datos_finales)} registros")
+            
             # 5. REGLA ESPECIAL PARA FID_ANTERIOR (IGUAL que generar_txt)
             incluir_fid_anterior = self._debe_incluir_fid_anterior(datos_finales)
             
             # 6. Nombres definitivos de encabezados (IGUAL que generar_txt)
             encabezados_base = [
-                'COORDENADA_X', 'COORDENADA_Y', 'GRUPO', 'TIPO', 'CLASE', 'USO', 'ESTADO', 
+                'COORDENADA_X', 'COORDENADA_Y', 'COOR_GPS_LAT', 'COOR_GPS_LON', 'GRUPO', 'TIPO', 'CLASE', 'USO', 'ESTADO', 
                 'TIPO_ADECUACION', 'PROPIETARIO', 'PORCENTAJE_PROPIEDAD', 'UBICACION',
                 'CODIGO_MATERIAL', 'FECHA_INSTALACION', 'FECHA_OPERACION', 'PROYECTO',
                 'EMPRESA', 'OBSERVACIONES', 'CLASIFICACION_MERCADO', 'TIPO_PROYECTO',
@@ -1137,7 +1347,7 @@ class FileGenerator:
             
             # 7. Mapeo de campos internos a encabezados (IGUAL que generar_txt)
             campos_orden_base = [
-                'COORDENADA_X', 'COORDENADA_Y', 'GRUPO', 'TIPO', 'CLASE', 'USO', 'ESTADO', 
+                'COORDENADA_X', 'COORDENADA_Y', 'COOR_GPS_LAT', 'COOR_GPS_LON', 'GRUPO', 'TIPO', 'CLASE', 'USO', 'ESTADO', 
                 'TIPO_ADECUACION', 'PROPIETARIO', 'PORCENTAJE_PROPIEDAD', 'UBICACION',
                 'CODIGO_MATERIAL', 'FECHA_INSTALACION', 'FECHA_OPERACION', 'PROYECTO',
                 'EMPRESA', 'OBSERVACIONES', 'CLASIFICACION_MERCADO', 'TIPO_PROYECTO',
@@ -1691,13 +1901,27 @@ class FileGenerator:
             return 'texto'
 
     def generar_xml(self):
-        """Genera archivo XML con la estructura específica requerida para el sistema"""
+        """Genera archivo XML con la estructura específica requerida para el sistema - SOLO REGISTROS SIN FID"""
         try:
             from xml.etree.ElementTree import Element, SubElement, tostring
             from xml.dom import minidom
             
             filename = f"estructuras_{self.proceso.id}.xml"
             filepath = os.path.join(self.base_path, filename)
+            
+            # CONTAR registros sin FID para el XML NUEVO
+            if self.proceso.datos_excel:
+                registros_sin_fid = 0
+                total_registros = len(self.proceso.datos_excel)
+                
+                for registro in self.proceso.datos_excel:
+                    fid_value = self._extraer_fid_rep(registro)
+                    if not (fid_value and str(fid_value).strip()):
+                        registros_sin_fid += 1
+                
+                print(f"DEBUG generar_xml: XML NUEVO - {registros_sin_fid} registros SIN FID de {total_registros} totales")
+            else:
+                registros_sin_fid = 0
             
             # Crear estructura XML según especificación
             root = Element('Configuracion')
@@ -1768,6 +1992,7 @@ class FileGenerator:
             with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
                 f.write(pretty_xml_sin_declaracion)
 
+            print(f"Archivo XML NUEVO generado exitosamente: {filename} (configuración para {registros_sin_fid} registros)")
             return filename
 
         except Exception as e:
