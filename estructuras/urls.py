@@ -6,6 +6,7 @@ app_name = 'estructuras'
 urlpatterns = [
     path('', views.index, name='index'),
     path('iniciar-proceso/', views.iniciar_proceso, name='iniciar_proceso'),
+    path('cargar-mas-procesos/', views.cargar_mas_procesos, name='cargar_mas_procesos'),
     path('proceso/<uuid:proceso_id>/', views.proceso_detalle, name='proceso_detalle'),
     path('proceso/<uuid:proceso_id>/estado/', views.estado_proceso, name='estado_proceso'),
     

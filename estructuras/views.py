@@ -17,12 +17,48 @@ from .clasificador import ClasificadorAutomatico
 
 def index(request):
     """Página principal - listado de procesos"""
-    procesos = ProcesoEstructura.objects.all().order_by('-created_at')
+    # Paginación: mostrar solo los primeros 10 procesos
+    procesos = ProcesoEstructura.objects.all().order_by('-created_at')[:10]
+    total_procesos = ProcesoEstructura.objects.count()
     
     context = {
         'procesos': procesos,
+        'total_procesos': total_procesos,
+        'mostrar_ver_mas': total_procesos > 10,
     }
     return render(request, 'estructuras/index.html', context)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def cargar_mas_procesos(request):
+    """Cargar más procesos para paginación AJAX"""
+    try:
+        offset = int(request.GET.get('offset', 0))
+        limit = 10
+        
+        procesos = ProcesoEstructura.objects.all().order_by('-created_at')[offset:offset + limit]
+        total_procesos = ProcesoEstructura.objects.count()
+        
+        procesos_data = []
+        for proceso in procesos:
+            procesos_data.append({
+                'id': str(proceso.id),
+                'created_at': proceso.created_at.strftime("%d/%m/%Y %H:%M"),
+                'tipo_estructura_display': proceso.get_tipo_estructura_display(),
+                'estado': proceso.estado,
+                'estado_display': proceso.get_estado_display(),
+                'progreso_porcentaje': proceso.progreso_porcentaje,
+                'detalle_url': f"/proceso/{proceso.id}/"
+            })
+        
+        return JsonResponse({
+            'procesos': procesos_data,
+            'has_more': offset + limit < total_procesos,
+            'next_offset': offset + limit
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=400)
 
 @csrf_exempt
 @require_http_methods(["POST"])

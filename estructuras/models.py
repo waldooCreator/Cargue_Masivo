@@ -102,3 +102,20 @@ class ProcesoEstructura(models.Model):
         if self.registros_totales > 0:
             return round((self.registros_procesados / self.registros_totales) * 100, 2)
         return 0
+    
+    def get_tipo_estructura_display(self):
+        """Método para mostrar los tipos de estructura detectados"""
+        if self.clasificacion_confirmada:
+            tipos_detectados = []
+            if self.total_expansion > 0:
+                tipos_detectados.append(f"Expansión({self.total_expansion})")
+            if self.total_reposicion_nuevo > 0:
+                tipos_detectados.append(f"Rep.Nuevo({self.total_reposicion_nuevo})")
+            if self.total_reposicion_bajo > 0:
+                tipos_detectados.append(f"Rep.Bajo({self.total_reposicion_bajo})")
+            if self.total_desmantelado > 0:
+                tipos_detectados.append(f"Desmantelado({self.total_desmantelado})")
+            
+            return " + ".join(tipos_detectados) if tipos_detectados else "Sin clasificar"
+        else:
+            return f"Procesando... ({self.registros_totales} registros)"

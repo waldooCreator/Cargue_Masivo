@@ -155,11 +155,30 @@
             </tbody>
         </table>
     </div>
+    
+    <!-- Botón Ver Más -->
+    {% if mostrar_ver_mas %}
+    <div class="mt-4 text-center">
+        <button id="ver-mas-btn" 
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-primary-700 bg-primary/10 hover:bg-primary/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-200"
+                data-offset="10">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+            </svg>
+            <span id="ver-mas-text">Ver más procesos</span>
+            <svg id="loading-spinner" class="w-4 h-4 ml-2 animate-spin hidden" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </button>
+    </div>
+    {% endif %}
 </div>
 
 <!-- Django template data as data attributes -->
 <div id="form-data" 
      data-iniciar-proceso-url="{% url 'estructuras:iniciar_proceso' %}"
+     data-cargar-mas-procesos-url="{% url 'estructuras:cargar_mas_procesos' %}"
      style="display: none;">
 </div>
 
@@ -170,7 +189,8 @@ console.log('Form data element:', formDataElement);
 console.log('Dataset:', formDataElement ? formDataElement.dataset : 'Element not found');
 
 const formData = {
-    iniciarProcesoUrl: formDataElement ? formDataElement.dataset.iniciarProcesoUrl : "{% url 'estructuras:iniciar_proceso' %}"
+    iniciarProcesoUrl: formDataElement ? formDataElement.dataset.iniciarProcesoUrl : "{% url 'estructuras:iniciar_proceso' %}",
+    cargarMasProcesosUrl: formDataElement ? formDataElement.dataset.cargarMasProcesosUrl : "{% url 'estructuras:cargar_mas_procesos' %}"
 };
 console.log('Form data:', formData);
 
@@ -183,7 +203,122 @@ document.addEventListener('DOMContentLoaded', function() {
             bar.style.width = progressValue + '%';
         }
     });
+    
+    // Funcionalidad "Ver más" para procesos
+    const verMasBtn = document.getElementById('ver-mas-btn');
+    if (verMasBtn) {
+        verMasBtn.addEventListener('click', async function() {
+            const offset = parseInt(this.dataset.offset);
+            const loadingSpinner = document.getElementById('loading-spinner');
+            const btnText = document.getElementById('ver-mas-text');
+            
+            // Mostrar loading
+            loadingSpinner.classList.remove('hidden');
+            btnText.textContent = 'Cargando...';
+            this.disabled = true;
+            
+            try {
+                const response = await fetch(`${formData.cargarMasProcesosUrl}?offset=${offset}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Agregar nuevos procesos a la tabla
+                    const tbody = document.querySelector('tbody');
+                    data.procesos.forEach(proceso => {
+                        const row = createProcesoRow(proceso);
+                        tbody.appendChild(row);
+                    });
+                    
+                    // Actualizar offset para próxima carga
+                    this.dataset.offset = data.next_offset;
+                    
+                    // Ocultar botón si no hay más procesos
+                    if (!data.has_more) {
+                        this.style.display = 'none';
+                    }
+                } else {
+                    alert('Error al cargar más procesos: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error al cargar más procesos: ' + error.message);
+            } finally {
+                // Ocultar loading
+                loadingSpinner.classList.add('hidden');
+                btnText.textContent = 'Ver más procesos';
+                this.disabled = false;
+            }
+        });
+    }
 });
+
+// Función para crear una fila de proceso
+function createProcesoRow(proceso) {
+    const row = document.createElement('tr');
+    row.className = 'hover:bg-gray-50';
+    
+    // Determinar el estado del proceso
+    let estadoBadge = '';
+    if (proceso.estado === 'COMPLETADO') {
+        estadoBadge = `
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-accent/10 text-accent-dark">
+                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                </svg>
+                ${proceso.estado_display}
+            </span>
+        `;
+    } else if (proceso.estado === 'ERROR') {
+        estadoBadge = `
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                </svg>
+                ${proceso.estado_display}
+            </span>
+        `;
+    } else {
+        estadoBadge = `
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                <svg class="w-3 h-3 mr-1 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                ${proceso.estado_display}
+            </span>
+        `;
+    }
+    
+    row.innerHTML = `
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+            ${proceso.created_at}
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+            ${proceso.tipo_estructura_display}
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            ${estadoBadge}
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <div class="w-full bg-gray-200 rounded-full h-2">
+                <div class="h-2 bg-gradient-to-r from-secondary to-secondary-light rounded-full transition-all duration-300 progress-bar" 
+                     data-progress="${proceso.progreso_porcentaje}" style="width: ${proceso.progreso_porcentaje}%"></div>
+            </div>
+            <span class="text-xs text-gray-500 mt-1">${proceso.progreso_porcentaje}%</span>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+            <a href="${proceso.detalle_url}" 
+               class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-primary-700 bg-primary/10 hover:bg-primary/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-200">
+                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                </svg>
+                Ver Detalle
+            </a>
+        </td>
+    `;
+    
+    return row;
+}
 
 document.getElementById('uploadForm').addEventListener('submit', async (e) => {
     e.preventDefault();
