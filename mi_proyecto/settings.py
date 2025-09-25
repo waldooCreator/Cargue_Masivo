@@ -77,8 +77,27 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+    },
+    # Configuración Oracle para consultas de FID
+    'oracle': {
+        'ENGINE': 'django.db.backends.oracle',
+        'NAME': 'EPM-PO18:1521/GENESTB',
+        'USER': 'CENS_CONSULTA',
+        'PASSWORD': 'C3N5C0N5ULT4',
+        'HOST': 'EPM-PO18',
+        'PORT': '1521',
+        'OPTIONS': {
+            'threaded': True,
+        },
     }
 }
+
+# Router para dirigir consultas específicas a Oracle
+DATABASE_ROUTERS = ['estructuras.db_router.OracleRouter']
+
+# Configuración Oracle
+ORACLE_ENABLED = True  # Cambiar a False para deshabilitar consultas Oracle temporalmente
+ORACLE_CONNECTION_TIMEOUT = 10  # Timeout en segundos para conexiones Oracle
 
 
 # Password validation

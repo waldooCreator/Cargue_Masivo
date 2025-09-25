@@ -83,9 +83,10 @@ class DataUtils:
     def limpiar_valor_para_txt(valor):
         """
         Limpia un valor para que no contenga caracteres problemáticos en el archivo TXT
+        Devuelve 'NULL' para valores vacíos o nulos para facilitar identificación
         """
         if valor is None:
-            return ''
+            return 'NULL'
         
         # Convertir a string
         valor_str = str(valor)
@@ -95,6 +96,10 @@ class DataUtils:
         
         # Limpiar espacios al inicio y final
         valor_str = valor_str.strip()
+        
+        # Si después de limpiar queda vacío o contiene solo 'nan', 'none', etc., devolver NULL
+        if not valor_str or valor_str.lower() in ('', 'nan', 'none', 'null'):
+            return 'NULL'
         
         # Limitar longitud máxima (algunos sistemas tienen límites)
         if len(valor_str) > 255:
@@ -106,12 +111,36 @@ class DataUtils:
 class OracleHelper:
     """Helper para consultas a Oracle Database"""
     
-    # Credenciales Oracle integradas directamente
-    ORACLE_CONFIG = {
-        'user': 'CENS_CONSULTA',
-        'password': 'C3N5C0N5ULT4',
-        'dsn': 'EPM-PO18:1521/GENESTB'
-    }
+    @classmethod
+    def get_oracle_config(cls):
+        """Obtiene la configuración de Oracle desde Django settings"""
+        db_config = settings.DATABASES.get('oracle', {})
+        if not db_config:
+            # Fallback a credenciales directas si no hay configuración en settings
+            return {
+                'user': 'CENS_CONSULTA',
+                'password': 'C3N5C0N5ULT4',
+                'dsn': 'EPM-PO18:1521/GENESTB'
+            }
+        
+        # Construir DSN desde la configuración de Django
+        host = db_config.get('HOST', 'EPM-PO18')
+        port = db_config.get('PORT', '1521')
+        name = db_config.get('NAME', 'GENESTB')
+        
+        # Si NAME contiene el formato completo host:port/service, usarlo tal como está
+        if ':' in name and '/' in name:
+            dsn = name
+        else:
+            # Extraer solo el service name si viene en formato completo
+            service_name = name.split('/')[-1] if '/' in name else name
+            dsn = f"{host}:{port}/{service_name}"
+        
+        return {
+            'user': db_config.get('USER', 'CENS_CONSULTA'),
+            'password': db_config.get('PASSWORD', 'C3N5C0N5ULT4'),
+            'dsn': dsn
+        }
     
     @classmethod
     def test_connection(cls) -> bool:
@@ -122,7 +151,8 @@ class OracleHelper:
             True si la conexión es exitosa, False en caso contrario
         """
         try:
-            with oracledb.connect(**cls.ORACLE_CONFIG) as connection:
+            oracle_config = cls.get_oracle_config()
+            with oracledb.connect(**oracle_config) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT 1 FROM DUAL")
                     result = cursor.fetchone()
@@ -143,15 +173,37 @@ class OracleHelper:
             Tuple con (coor_gps_lat, coor_gps_lon) como strings.
             Si no se encuentra o hay error, retorna ('', '')
         """
+        # Verificar si Oracle está habilitado en settings
+        if hasattr(settings, 'ORACLE_ENABLED') and not settings.ORACLE_ENABLED:
+            print(f"DEBUG Oracle: Consultas Oracle deshabilitadas para FID {fid_codigo}")
+            return ('', '')
+            
         try:
-            # Normalizar FID (eliminar espacios y convertir a string)
+            # Normalizar FID (eliminar espacios, convertir a string y remover .0 si existe)
             fid_limpio = str(fid_codigo).strip()
             if not fid_limpio or fid_limpio.lower() in ('nan', 'none', ''):
                 return ('', '')
+                
+            # Limpiar FID: remover .0 si es un número entero
+            if fid_limpio.endswith('.0'):
+                try:
+                    float_val = float(fid_limpio)
+                    if float_val.is_integer():
+                        fid_limpio = str(int(float_val))
+                except (ValueError, OverflowError):
+                    pass
             
             # Conectar a Oracle
-            with oracledb.connect(**cls.ORACLE_CONFIG) as connection:
+            oracle_config = cls.get_oracle_config()
+            with oracledb.connect(**oracle_config) as connection:
                 with connection.cursor() as cursor:
+                    # Configurar timeout para queries largas (5 segundos en milisegundos)
+                    try:
+                        cursor.callTimeout = 5000
+                    except AttributeError:
+                        # Fallback si callTimeout no está disponible
+                        pass
+                    
                     # Query para obtener coordenadas por FID
                     query = """
                     SELECT g3e_fid, coor_gps_lat, coor_gps_lon
@@ -168,15 +220,21 @@ class OracleHelper:
                         lat_str = str(lat) if lat is not None else ''
                         lon_str = str(lon) if lon is not None else ''
                         
-                        print(f"DEBUG Oracle: FID {fid_limpio} -> lat={lat_str}, lon={lon_str}")
+                        print(f"✅ Oracle: FID {fid_limpio} -> lat={lat_str}, lon={lon_str}")
                         return (lat_str, lon_str)
                     else:
-                        print(f"DEBUG Oracle: No se encontró FID {fid_limpio}")
+                        print(f"⚠️ Oracle: No se encontró FID {fid_limpio} en la base de datos")
                         return ('', '')
                         
         except Exception as e:
-            print(f"ERROR Oracle consulta FID {fid_codigo}: {str(e)}")
-            # Si hay error de conexión, intentar continuar sin detener el proceso
+            error_msg = str(e)
+            if "timed out" in error_msg.lower():
+                print(f"⏱️ Oracle TIMEOUT para FID {fid_limpio} (original: {fid_codigo}): Conexión expiró. Continuando sin coordenadas GPS.")
+            elif "connection" in error_msg.lower():
+                print(f"🔌 Oracle CONEXIÓN para FID {fid_limpio} (original: {fid_codigo}): No se pudo conectar. Continuando sin coordenadas GPS.")
+            else:
+                print(f"❌ Oracle ERROR para FID {fid_limpio} (original: {fid_codigo}): {error_msg}")
+            # Si hay error de conexión, continuar sin detener el proceso
             return ('', '')
 
 
@@ -605,6 +663,29 @@ class FileGenerator:
         os.makedirs(self.base_path, exist_ok=True)
         self.clasificador = ClasificadorEstructuras()
 
+    def _limpiar_fid(self, valor) -> str:
+        """
+        Limpia y normaliza un valor FID eliminando decimales innecesarios (.0)
+        """
+        if valor is None:
+            return ''
+        
+        vs = str(valor).strip()
+        if vs.lower() in ('', 'nan', 'none'):
+            return ''
+            
+        # Si es un número con .0 al final, remover el .0
+        if vs.endswith('.0'):
+            try:
+                # Verificar que realmente es un número entero
+                float_val = float(vs)
+                if float_val.is_integer():
+                    return str(int(float_val))
+            except (ValueError, OverflowError):
+                pass
+        
+        return vs
+
     def _extraer_fid_rep(self, registro: Dict) -> str:
         """
         Extrae el valor de 'Código FID_rep' de un registro probando varias claves
@@ -617,10 +698,9 @@ class FileGenerator:
                 v = registro.get(k)
                 if v is None:
                     continue
-                vs = str(v).strip()
-                if vs.lower() in ('', 'nan', 'none'):
-                    continue
-                return vs
+                vs = self._limpiar_fid(v)
+                if vs:
+                    return vs
 
         # 2. Buscar cualquier clave cuyo nombre normalizado contenga 'fid' (aceptar variantes)
         try:
@@ -632,10 +712,9 @@ class FileGenerator:
                     v = registro.get(key)
                     if v is None:
                         continue
-                    vs = str(v).strip()
-                    if vs.lower() in ('', 'nan', 'none'):
-                        continue
-                    return vs
+                    vs = self._limpiar_fid(v)
+                    if vs:
+                        return vs
         except Exception:
             pass
 
@@ -1217,7 +1296,7 @@ class FileGenerator:
 
                         if fid:
                             try:
-                                registro['FID_ANTERIOR'] = fid
+                                registro['FID_ANTERIOR'] = self._limpiar_fid(fid)
                             except Exception:
                                 pass
                             raw_filtrados.append(registro)
@@ -1250,7 +1329,7 @@ class FileGenerator:
                                 if raw_original and isinstance(raw_original, dict):
                                     fid_val = raw_original.get('FID_ANTERIOR') or raw_original.get('Código FID_rep') or raw_original.get('Codigo FID_rep')
                                     if fid_val and str(fid_val).strip().lower() not in ('', 'nan', 'none'):
-                                        registro_comb['FID_ANTERIOR'] = str(fid_val).strip()
+                                        registro_comb['FID_ANTERIOR'] = self._limpiar_fid(fid_val)
                             except Exception:
                                 pass
                             if self.proceso.circuito:
@@ -1328,39 +1407,12 @@ class FileGenerator:
             # 5. REGLA ESPECIAL PARA FID_ANTERIOR (IGUAL que generar_txt)
             incluir_fid_anterior = self._debe_incluir_fid_anterior(datos_finales)
             
-            # 6. Nombres definitivos de encabezados (IGUAL que generar_txt)
-            encabezados_base = [
-                'COORDENADA_X', 'COORDENADA_Y', 'COOR_GPS_LAT', 'COOR_GPS_LON', 'GRUPO', 'TIPO', 'CLASE', 'USO', 'ESTADO', 
-                'TIPO_ADECUACION', 'PROPIETARIO', 'PORCENTAJE_PROPIEDAD', 'UBICACION',
-                'CODIGO_MATERIAL', 'FECHA_INSTALACION', 'FECHA_OPERACION', 'PROYECTO',
-                'EMPRESA', 'OBSERVACIONES', 'CLASIFICACION_MERCADO', 'TIPO_PROYECTO',
-                'ID_MERCADO', 'UC', 'ESTADO_SALUD', 'OT_MAXIMO', 'CODIGO_MARCACION',
-                'SALINIDAD'
-            ]
-            
-            # Agregar FID_ANTERIOR solo si debe incluirse (IGUAL que generar_txt)
-            if incluir_fid_anterior:
-                encabezados_base.append('FID_ANTERIOR')
-            
-            encabezados_base.append('ENLACE')
+            # 6. Nombres definitivos de encabezados - SOLO FID_ANTERIOR Y COORDENADAS GPS
+            encabezados_base = ['FID_ANTERIOR', 'COOR_GPS_LAT', 'COOR_GPS_LON']
             encabezados = encabezados_base
             
-            # 7. Mapeo de campos internos a encabezados (IGUAL que generar_txt)
-            campos_orden_base = [
-                'COORDENADA_X', 'COORDENADA_Y', 'COOR_GPS_LAT', 'COOR_GPS_LON', 'GRUPO', 'TIPO', 'CLASE', 'USO', 'ESTADO', 
-                'TIPO_ADECUACION', 'PROPIETARIO', 'PORCENTAJE_PROPIEDAD', 'UBICACION',
-                'CODIGO_MATERIAL', 'FECHA_INSTALACION', 'FECHA_OPERACION', 'PROYECTO',
-                'EMPRESA', 'OBSERVACIONES', 'CLASIFICACION_MERCADO', 'TIPO_PROYECTO',
-                'ID_MERCADO', 'UC', 'ESTADO_SALUD', 'OT_MAXIMO', 'CODIGO_MARCACION',
-                'SALINIDAD'
-            ]
-            
-            # Agregar FID_ANTERIOR solo si debe incluirse (IGUAL que generar_txt)
-            if incluir_fid_anterior:
-                campos_orden_base.append('FID_ANTERIOR')
-            
-            campos_orden_base.append('ENLACE')
-            campos_orden = campos_orden_base
+            # 7. Mapeo de campos internos a encabezados - SOLO FID_ANTERIOR Y COORDENADAS GPS
+            campos_orden = ['FID_ANTERIOR', 'COOR_GPS_LAT', 'COOR_GPS_LON']
 
             # 8. Escribir archivo (IGUAL que generar_txt)
             # DEBUG: inspeccionar datos antes de escribir
