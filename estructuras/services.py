@@ -1644,9 +1644,15 @@ class FileGenerator:
                 # Validar campos críticos específicos
                 if len(fields) >= 2:  # Al menos coordenadas
                     try:
-                        # Validar coordenadas si existen
+                        # Validar coordenadas si existen (permitir NULL para archivos de baja)
                         coord_x = fields[0] if fields[0] else '0'
                         coord_y = fields[1] if fields[1] else '0'
+                        
+                        # Permitir NULL en archivos de baja (que solo tienen FID y coordenadas)
+                        if coord_x.upper() == 'NULL' or coord_y.upper() == 'NULL':
+                            if len(header_fields) <= 3:  # Archivo de baja (FID_ANTERIOR, COOR_GPS_LAT, COOR_GPS_LON)
+                                continue  # Permitir NULL en archivos de baja
+                        
                         float(coord_x.replace(',', '.'))
                         float(coord_y.replace(',', '.'))
                     except (ValueError, IndexError):

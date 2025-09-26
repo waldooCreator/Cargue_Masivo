@@ -1,0 +1,1 @@
+import os, django, sys; sys.path.append(r"C:\Users\wvelasco\OneDrive - Grupo EPM\Escritorio\Cargue_Masivo"); os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mi_proyecto.settings"); django.setup(); from estructuras.models import ProcesoEstructura; p = ProcesoEstructura.objects.filter(estado="COMPLETADO").first(); print(f"Proceso: {p.id}" if p else "Sin procesos")
