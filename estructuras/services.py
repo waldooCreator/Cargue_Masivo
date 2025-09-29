@@ -1460,6 +1460,37 @@ class FileGenerator:
             else:
                 # APLICAR PREPARACIÓN FINAL DE DATOS a TODOS los registros
                 datos_finales = self._preparar_datos_finales(datos_completos)
+
+                # QUEMAR valores requeridos para TXT NUEVO (aplica a todos los registros)
+                for reg in datos_finales:
+                    reg['GRUPO'] = 'ESTRUCTURAS EYT'
+                    reg['CLASE'] = 'POSTE'
+                    reg['USO'] = 'DISTRIBUCION ENERGIA'
+                    reg['PORCENTAJE_PROPIEDAD'] = '100'
+                    reg['ID_MERCADO'] = '161'
+                    reg['SALINIDAD'] = 'NO'
+
+                # TRAER UC (Unidad Constructiva) directamente del Excel crudo por fila
+                try:
+                    processor_uc = ExcelProcessor(self.proceso)
+                    raw_excel_uc, _ = processor_uc.procesar_archivo()
+                except Exception:
+                    raw_excel_uc = []
+
+                for i, reg in enumerate(datos_finales):
+                    try:
+                        if i < len(raw_excel_uc):
+                            raw_row = raw_excel_uc[i] if isinstance(raw_excel_uc[i], dict) else {}
+                            uc_val = None
+                            # Buscar con prioridad el encabezado exacto proporcionado
+                            for key in ['Unidad Constructiva', 'Unidad_Constructiva', 'UC']:
+                                if key in raw_row and str(raw_row.get(key) or '').strip():
+                                    uc_val = str(raw_row.get(key)).strip()
+                                    break
+                            if uc_val:
+                                reg['UC'] = uc_val
+                    except Exception:
+                        continue
             
             # ENRIQUECIMIENTO ORACLE PARA REGISTROS CON CÓDIGO OPERATIVO
             if datos_finales:
@@ -1943,12 +1974,12 @@ class FileGenerator:
             # 5. REGLA ESPECIAL PARA FID_ANTERIOR (IGUAL que generar_txt)
             incluir_fid_anterior = self._debe_incluir_fid_anterior(datos_finales)
             
-            # 6. Nombres definitivos de encabezados - SOLO FID_ANTERIOR Y COORDENADAS GPS
-            encabezados_base = ['FID_ANTERIOR', 'COOR_GPS_LAT', 'COOR_GPS_LON']
+            # 6. Nombres definitivos de encabezados - SOLO FID_ANTERIOR Y COORDENADAS GPS (LON primero, luego LAT)
+            encabezados_base = ['FID_ANTERIOR', 'COOR_GPS_LON', 'COOR_GPS_LAT']
             encabezados = encabezados_base
             
-            # 7. Mapeo de campos internos a encabezados - SOLO FID_ANTERIOR Y COORDENADAS GPS
-            campos_orden = ['FID_ANTERIOR', 'COOR_GPS_LAT', 'COOR_GPS_LON']
+            # 7. Mapeo de campos internos a encabezados - SOLO FID_ANTERIOR Y COORDENADAS GPS (LON primero, luego LAT)
+            campos_orden = ['FID_ANTERIOR', 'COOR_GPS_LON', 'COOR_GPS_LAT']
 
             # 8. Escribir archivo (IGUAL que generar_txt)
             # DEBUG: inspeccionar datos antes de escribir
