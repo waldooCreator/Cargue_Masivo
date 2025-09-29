@@ -478,52 +478,50 @@ def descargar_archivo(request, proceso_id, tipo_archivo):
     if tipo_archivo not in ['txt', 'xml', 'norma_txt', 'norma_xml', 'txt_baja', 'xml_baja']:
         raise Http404("Tipo de archivo no válido")
     
-        # Manejo especial para txt_baja con cache optimizado
-        if tipo_archivo == 'txt_baja':
-            # Verificar si ya existe el archivo en cache
-            cache_filename = f"estructuras_{proceso_id}_baja.txt"
-            cache_filepath = os.path.join(settings.MEDIA_ROOT, 'outputs', cache_filename)
+    # Manejo especial para txt_baja
+    if tipo_archivo == 'txt_baja':
+        # Verificar si ya está registrado en archivos_generados
+        if 'txt_baja' in proceso.archivos_generados:
+            # Usar el archivo registrado
+            filename = proceso.archivos_generados['txt_baja']
+            filepath = os.path.join(settings.MEDIA_ROOT, 'generated', filename)
             
-            if os.path.exists(cache_filepath):
-                # Servir archivo desde cache
+            if os.path.exists(filepath):
                 response = FileResponse(
-                    open(cache_filepath, 'rb'),
+                    open(filepath, 'rb'),
                     as_attachment=True,
-                    filename=cache_filename
+                    filename=filename
                 )
                 return response
-            else:
-                # Si no existe, generar el archivo TXT baja
-                try:
-                    from .services import FileGenerator
-                    generator = FileGenerator(proceso)
-                    
-                    # El método generar_txt_baja() guarda en media/generated, 
-                    # necesitamos copiarlo a media/outputs
-                    filename_generated = generator.generar_txt_baja()
-                    generated_filepath = os.path.join(settings.MEDIA_ROOT, 'generated', filename_generated)
-                    
-                    # Copiar a cache (outputs)
-                    import shutil
-                    shutil.copy2(generated_filepath, cache_filepath)
-                    
-                    # Actualizar registro en base de datos
-                    if not proceso.archivos_generados:
-                        proceso.archivos_generados = {}
-                    proceso.archivos_generados['txt_baja'] = cache_filename
-                    proceso.save()
-                    
-                    # Servir archivo recién generado
-                    response = FileResponse(
-                        open(cache_filepath, 'rb'),
-                        as_attachment=True,
-                        filename=cache_filename
-                    )
-                    return response
-                    
-                except Exception as e:
-                    print(f"Error generando TXT baja: {str(e)}")
-                    raise Http404("Error al generar archivo TXT_BAJA")    # Manejo normal para otros tipos de archivo
+        
+        # Si no está registrado o no existe, generar dinámicamente
+        try:
+            from .services import FileGenerator
+            generator = FileGenerator(proceso)
+            
+            # Generar archivo TXT baja
+            filename_generated = generator.generar_txt_baja()
+            generated_filepath = os.path.join(settings.MEDIA_ROOT, 'generated', filename_generated)
+            
+            # Registrar en base de datos
+            if not proceso.archivos_generados:
+                proceso.archivos_generados = {}
+            proceso.archivos_generados['txt_baja'] = filename_generated
+            proceso.save()
+            
+            # Servir archivo recién generado
+            response = FileResponse(
+                open(generated_filepath, 'rb'),
+                as_attachment=True,
+                filename=filename_generated
+            )
+            return response
+            
+        except Exception as e:
+            print(f"Error generando TXT baja: {str(e)}")
+            raise Http404("Error al generar archivo TXT_BAJA")
+    
+    # Manejo normal para otros tipos de archivo
     filename = proceso.archivos_generados.get(tipo_archivo)
     if not filename:
         raise Http404(f"Archivo {tipo_archivo.upper()} no encontrado")

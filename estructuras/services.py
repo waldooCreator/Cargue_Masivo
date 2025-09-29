@@ -237,6 +237,323 @@ class OracleHelper:
             # Si hay error de conexión, continuar sin detener el proceso
             return ('', '')
 
+    @classmethod
+    def obtener_fid_desde_codigo_operativo(cls, codigo_operativo: str) -> str:
+        """
+        Obtiene el FID real desde el código operativo usando Oracle
+        
+        Args:
+            codigo_operativo: Código operativo desde el Excel (ej: Z238163, Z231390)
+            
+        Returns:
+            str: FID real o '' si no se encuentra
+        """
+        # Verificar si Oracle está habilitado en settings
+        if hasattr(settings, 'ORACLE_ENABLED') and not settings.ORACLE_ENABLED:
+            print(f"DEBUG Oracle: Consultas Oracle deshabilitadas para código operativo {codigo_operativo}")
+            return ''
+            
+        if not codigo_operativo:
+            return ''
+            
+        # Limpiar el código operativo
+        codigo_limpio = str(codigo_operativo).strip()
+        if not codigo_limpio or codigo_limpio.lower() in ('nan', 'none', ''):
+            return ''
+            
+        print(f"🔍 Buscando FID para código operativo: {codigo_limpio}")
+        
+        try:
+            oracle_config = cls.get_oracle_config()
+            with oracledb.connect(**oracle_config) as connection:
+                with connection.cursor() as cursor:
+                    # Configurar timeout
+                    try:
+                        cursor.callTimeout = 5000
+                    except AttributeError:
+                        pass
+                    
+                    # Query para obtener FID desde código operativo
+                    query = """
+                    SELECT c.codigo_operativo, c.g3e_fid
+                    FROM ccomun c
+                    WHERE codigo_operativo = :codigo_param
+                    """
+                    
+                    cursor.execute(query, {"codigo_param": codigo_limpio})
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        codigo_op, fid_real = result
+                        fid_str = str(fid_real) if fid_real is not None else ''
+                        print(f"✅ Oracle: Código operativo {codigo_limpio} -> FID {fid_str}")
+                        return fid_str
+                    else:
+                        print(f"⚠️ Oracle: No se encontró FID para código operativo {codigo_limpio}")
+                        return ''
+                        
+        except Exception as e:
+            error_msg = str(e)
+            if "timed out" in error_msg.lower():
+                print(f"⏱️ Oracle TIMEOUT para código operativo {codigo_limpio}: Conexión expiró.")
+            elif "connection" in error_msg.lower():
+                print(f"🔌 Oracle CONEXIÓN para código operativo {codigo_limpio}: No se pudo conectar.")
+            else:
+                print(f"❌ Oracle ERROR para código operativo {codigo_limpio}: {error_msg}")
+            return ''
+
+    @classmethod
+    def obtener_datos_completos_por_fid(cls, fid_real: str) -> Dict[str, str]:
+        """
+        Obtiene datos completos (coordenadas, TIPO, PROPIETARIO, etc.) desde Oracle usando FID real
+        
+        Args:
+            fid_real: FID real obtenido desde código operativo
+            
+        Returns:
+            Dict con claves: COOR_GPS_LAT, COOR_GPS_LON, TIPO, TIPO_ADECUACION, PROPIETARIO, UBICACION, CLASIFICACION_MERCADO
+        """
+        # Verificar si Oracle está habilitado en settings
+        if hasattr(settings, 'ORACLE_ENABLED') and not settings.ORACLE_ENABLED:
+            print(f"DEBUG Oracle: Consultas Oracle deshabilitadas para FID {fid_real}")
+            return {}
+            
+        if not fid_real:
+            return {}
+            
+        # Limpiar el FID
+        fid_limpio = str(fid_real).strip()
+        if not fid_limpio or fid_limpio.lower() in ('nan', 'none', ''):
+            return {}
+            
+        print(f"🔍 Buscando datos completos para FID real: {fid_limpio}")
+        
+        try:
+            oracle_config = cls.get_oracle_config()
+            with oracledb.connect(**oracle_config) as connection:
+                with connection.cursor() as cursor:
+                    # Configurar timeout
+                    try:
+                        cursor.callTimeout = 5000
+                    except AttributeError:
+                        pass
+                    
+                    # Query para obtener datos completos desde FID real
+                    query = """
+                    SELECT 
+                        c.coor_gps_lat,
+                        c.coor_gps_lon,
+                        c.estado,
+                        c.estado,
+                        c.empresa_origen,
+                        c.ubicacion,
+                        c.clasificacion_mercado
+                    FROM ccomun c
+                    WHERE c.g3e_fid = :fid_param
+                    """
+                    
+                    cursor.execute(query, {"fid_param": fid_limpio})
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        lat, lon, estado, estado_salud, empresa_origen, ubicacion, clasif_mercado = result
+                        
+                        datos = {
+                            'COOR_GPS_LAT': str(lat) if lat is not None else '',
+                            'COOR_GPS_LON': str(lon) if lon is not None else '',
+                            'TIPO': str(estado) if estado is not None else '',
+                            'TIPO_ADECUACION': str(estado_salud) if estado_salud is not None else '',
+                            'PROPIETARIO': str(empresa_origen) if empresa_origen is not None else '',
+                            'UBICACION': str(ubicacion) if ubicacion is not None else '',
+                            'CLASIFICACION_MERCADO': str(clasif_mercado) if clasif_mercado is not None else ''
+                        }
+                        
+                        print(f"✅ Oracle datos completos FID {fid_limpio}: lat={datos['COOR_GPS_LAT']}, lon={datos['COOR_GPS_LON']}, estado={datos['TIPO']}")
+                        return datos
+                    else:
+                        print(f"⚠️ Oracle: No se encontraron datos completos para FID {fid_limpio}")
+                        return {}
+                        
+        except Exception as e:
+            error_msg = str(e)
+            if "timed out" in error_msg.lower():
+                print(f"⏱️ Oracle TIMEOUT para FID {fid_limpio}: Conexión expiró.")
+            elif "connection" in error_msg.lower():
+                print(f"🔌 Oracle CONEXIÓN para FID {fid_limpio}: No se pudo conectar.")
+            else:
+                print(f"❌ Oracle ERROR para FID {fid_limpio}: {error_msg}")
+            return {}
+
+    @classmethod
+    def obtener_datos_txt_nuevo_por_fid(cls, fid_real: str) -> Dict[str, str]:
+        """
+        Obtiene datos específicos para TXT nuevo desde Oracle usando FID real
+        Consulta tablas: eposte_at, ccomun, cpropietario
+        
+        Args:
+            fid_real: FID real obtenido desde código operativo
+            
+        Returns:
+            Dict con claves: COORDENADA_X, COORDENADA_Y, TIPO, TIPO_ADECUACION, PROPIETARIO, UBICACION, CLASIFICACION_MERCADO
+        """
+        # Verificar si Oracle está habilitado en settings
+        if hasattr(settings, 'ORACLE_ENABLED') and not settings.ORACLE_ENABLED:
+            print(f"DEBUG Oracle: Consultas Oracle deshabilitadas para FID {fid_real}")
+            return {}
+            
+        if not fid_real:
+            return {}
+            
+        # Limpiar el FID
+        fid_limpio = str(fid_real).strip()
+        if not fid_limpio or fid_limpio.lower() in ('nan', 'none', ''):
+            return {}
+            
+        print(f"🔍 Buscando datos TXT nuevo para FID real: {fid_limpio}")
+        
+        try:
+            oracle_config = cls.get_oracle_config()
+            with oracledb.connect(**oracle_config) as connection:
+                with connection.cursor() as cursor:
+                    # Configurar timeout
+                    try:
+                        cursor.callTimeout = 5000
+                    except AttributeError:
+                        pass
+                    
+                    # Query específica para TXT nuevo con JOIN explícito de tablas
+                    query = """
+                    SELECT 
+                        c.coor_gps_lon,
+                        c.coor_gps_lat,
+                        p.tipo,
+                        p.tipo_adecuacion,
+                        pr.propietario_1,
+                        c.ubicacion,
+                        c.clasificacion_mercado
+                    FROM ccomun c
+                        LEFT JOIN eposte_at p ON c.g3e_fid = p.g3e_fid
+                        LEFT JOIN cpropietario pr ON c.g3e_fid = pr.g3e_fid
+                    WHERE c.g3e_fid = :fid_param
+                    """
+                    
+                    cursor.execute(query, {"fid_param": fid_limpio})
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        lon, lat, tipo, tipo_adec, propietario, ubicacion, clasif_mercado = result
+                        
+                        datos = {
+                            'COORDENADA_X': str(lon) if lon is not None else '',
+                            'COORDENADA_Y': str(lat) if lat is not None else '',
+                            'TIPO': str(tipo) if tipo is not None else '',
+                            'TIPO_ADECUACION': str(tipo_adec) if tipo_adec is not None else '',
+                            'PROPIETARIO': str(propietario) if propietario is not None else '',
+                            'UBICACION': str(ubicacion) if ubicacion is not None else '',
+                            'CLASIFICACION_MERCADO': str(clasif_mercado) if clasif_mercado is not None else ''
+                        }
+                        
+                        print(f"✅ Oracle TXT nuevo FID {fid_limpio}: lon={datos['COORDENADA_X']}, lat={datos['COORDENADA_Y']}, tipo={datos['TIPO']}")
+                        return datos
+                    else:
+                        print(f"⚠️ Oracle: No se encontraron datos TXT nuevo para FID {fid_limpio}")
+                        return {}
+                        
+        except Exception as e:
+            error_msg = str(e)
+            if "timed out" in error_msg.lower():
+                print(f"⏱️ Oracle TIMEOUT para FID TXT nuevo {fid_limpio}: Conexión expiró.")
+            elif "connection" in error_msg.lower():
+                print(f"🔌 Oracle CONEXIÓN para FID TXT nuevo {fid_limpio}: No se pudo conectar.")
+            else:
+                print(f"❌ Oracle ERROR para FID TXT nuevo {fid_limpio}: {error_msg}")
+            return {}
+
+    @classmethod
+    def obtener_datos_txt_baja_por_fid(cls, fid_real: str) -> Dict[str, str]:
+        """
+        Obtiene datos específicos para TXT baja desde Oracle usando FID real
+        Utiliza la misma query que txt_nuevo pero para archivos de baja
+        
+        Args:
+            fid_real: FID real obtenido desde código operativo
+            
+        Returns:
+            Dict con claves: COORDENADA_X, COORDENADA_Y, TIPO, TIPO_ADECUACION, PROPIETARIO, UBICACION, CLASIFICACION_MERCADO
+        """
+        # Verificar si Oracle está habilitado en settings
+        if hasattr(settings, 'ORACLE_ENABLED') and not settings.ORACLE_ENABLED:
+            print(f"DEBUG Oracle: Consultas Oracle deshabilitadas para FID baja {fid_real}")
+            return {}
+            
+        if not fid_real:
+            return {}
+            
+        # Limpiar el FID
+        fid_limpio = str(fid_real).strip()
+        if not fid_limpio or fid_limpio.lower() in ('nan', 'none', ''):
+            return {}
+            
+        print(f"🔍 Buscando datos TXT baja para FID real: {fid_limpio}")
+        
+        try:
+            oracle_config = cls.get_oracle_config()
+            with oracledb.connect(**oracle_config) as connection:
+                with connection.cursor() as cursor:
+                    # Configurar timeout
+                    try:
+                        cursor.callTimeout = 5000
+                    except AttributeError:
+                        pass
+                    
+                    # Query específica para TXT baja con JOIN explícito de tablas (igual que txt_nuevo)
+                    query = """
+                    SELECT 
+                        c.coor_gps_lon,
+                        c.coor_gps_lat,
+                        p.tipo,
+                        p.tipo_adecuacion,
+                        pr.propietario_1,
+                        c.ubicacion,
+                        c.clasificacion_mercado
+                    FROM ccomun c
+                        LEFT JOIN eposte_at p ON c.g3e_fid = p.g3e_fid
+                        LEFT JOIN cpropietario pr ON c.g3e_fid = pr.g3e_fid
+                    WHERE c.g3e_fid = :fid_param
+                    """
+                    
+                    cursor.execute(query, {"fid_param": fid_limpio})
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        lon, lat, tipo, tipo_adec, propietario, ubicacion, clasif_mercado = result
+                        
+                        datos = {
+                            'COORDENADA_X': str(lon) if lon is not None else '',
+                            'COORDENADA_Y': str(lat) if lat is not None else '',
+                            'TIPO': str(tipo) if tipo is not None else '',
+                            'TIPO_ADECUACION': str(tipo_adec) if tipo_adec is not None else '',
+                            'PROPIETARIO': str(propietario) if propietario is not None else '',
+                            'UBICACION': str(ubicacion) if ubicacion is not None else '',
+                            'CLASIFICACION_MERCADO': str(clasif_mercado) if clasif_mercado is not None else ''
+                        }
+                        
+                        print(f"✅ Oracle TXT baja FID {fid_limpio}: lon={datos['COORDENADA_X']}, lat={datos['COORDENADA_Y']}, tipo={datos['TIPO']}")
+                        return datos
+                    else:
+                        print(f"⚠️ Oracle: No se encontraron datos baja para FID {fid_limpio}")
+                        return {}
+                        
+        except Exception as e:
+            error_msg = str(e)
+            if "timed out" in error_msg.lower():
+                print(f"⏱️ Oracle TIMEOUT para FID TXT baja {fid_limpio}: Conexión expiró.")
+            elif "connection" in error_msg.lower():
+                print(f"🔌 Oracle CONEXIÓN para FID TXT baja {fid_limpio}: No se pudo conectar.")
+            else:
+                print(f"❌ Oracle ERROR para FID TXT baja {fid_limpio}: {error_msg}")
+            return {}
+
 
 class ExcelProcessor:
     """Procesa archivos Excel extrayendo y normalizando datos de estructura"""
@@ -1068,6 +1385,55 @@ class FileGenerator:
         
         return datos_preparados
 
+    def _extraer_codigo_operativo(self, registro_transformado: Dict, registro_excel: Dict) -> str:
+        """
+        Extrae un código operativo válido del tipo 'Z' seguido solo por dígitos (p.ej. Z238163)
+        desde cualquier campo tanto del registro transformado como del registro crudo del Excel.
+
+        - Evita falsos positivos (p.ej., 'ZULC1').
+        - Acepta que el código esté embebido en otra cadena (lo extrae por regex).
+        - Prioriza campos típicos y luego escanea todo el registro.
+
+        Returns: código (str) o '' si no encuentra.
+        """
+        patron = re.compile(r"\bZ\d{3,}\b", re.IGNORECASE)
+
+        def normalizar(v):
+            if v is None:
+                return ''
+            try:
+                s = str(v).strip()
+            except Exception:
+                return ''
+            return s
+
+        # 1) Revisar campos más probables en EXCEL y TRANSFORMADO
+        candidatos = []
+        claves_excel = ['Código FID_rep', 'Codigo FID_rep', 'CODIGO_FID_REP', 'FID_REP', 'FID_ANTERIOR', 'FID', 'ENLACE', 'PROYECTO', 'COORDENADA_X', 'COORDENADA_Y']
+        for k in claves_excel:
+            if isinstance(registro_excel, dict) and k in registro_excel:
+                candidatos.append(normalizar(registro_excel.get(k)))
+            if isinstance(registro_transformado, dict) and k in registro_transformado:
+                candidatos.append(normalizar(registro_transformado.get(k)))
+
+        # 2) Si no se encontró en campos típicos, escanear TODOS los valores
+        if isinstance(registro_excel, dict):
+            for v in registro_excel.values():
+                candidatos.append(normalizar(v))
+        if isinstance(registro_transformado, dict):
+            for v in registro_transformado.values():
+                candidatos.append(normalizar(v))
+
+        # 3) Buscar primer match del patrón Z+digitos
+        for val in candidatos:
+            if not val:
+                continue
+            m = patron.search(val)
+            if m:
+                return m.group(0).upper().strip()
+
+        return ''
+
     def generar_txt(self):
         """Genera archivo TXT con los datos transformados (estructura completa) - SOLO REGISTROS SIN FID_rep"""
         try:
@@ -1080,47 +1446,121 @@ class FileGenerator:
             if not datos_salida:
                 raise Exception("No hay datos transformados para generar archivo TXT")
             
-            # FILTRADO CRÍTICO: EXCLUIR REGISTROS CON 'Código FID_rep' EXACTO (por índice del Excel)
-            indices_con_fid, raw_datos = self._indices_con_fid_rep_exactos()
-
-            # Construir set de firmas/UC de registros CON FID (para excluir duplicados en TXT NUEVO)
-            firmas_con_fid = set()
-            ucs_con_fid = set()
-            for i in indices_con_fid:
-                if 0 <= i < len(datos_salida):
-                    sig = self._signature_registro(datos_salida[i])
-                    if sig:
-                        firmas_con_fid.add(sig)
-                    uc_val = (str(datos_salida[i].get('UC')).strip() if datos_salida[i].get('UC') is not None else '')
-                    if uc_val:
-                        ucs_con_fid.add(uc_val)
-
-            datos_sin_fid = []
-            total_registros = len(datos_salida)
-            for i, registro in enumerate(datos_salida):
-                if i in indices_con_fid:
-                    print(f"DEBUG generar_txt: Excluyendo fila {i+1} del TXT NUEVO (tiene 'Código FID_rep')")
-                    continue
-                # Excluir además si la firma/UC coincide con alguna marcada para BAJA
-                sig_reg = self._signature_registro(registro)
-                uc_reg = (str(registro.get('UC')).strip() if registro.get('UC') is not None else '')
-                if uc_reg and uc_reg in ucs_con_fid:
-                    print(f"DEBUG generar_txt: Excluyendo fila {i+1} por UC duplicada con BAJA: {uc_reg}")
-                    continue
-                if sig_reg and sig_reg in firmas_con_fid:
-                    print(f"DEBUG generar_txt: Excluyendo fila {i+1} por firma duplicada con BAJA: {sig_reg}")
-                    continue
-                datos_sin_fid.append(registro)
-
-            print(f"DEBUG generar_txt: Filtrados {len(datos_sin_fid)} registros SIN FID de {total_registros} totales")
+            # NUEVO COMPORTAMIENTO: INCLUIR TODOS LOS REGISTROS (con y sin código FID)
+            # Los registros CON código operativo se enriquecerán desde Oracle
+            # Los registros SIN código operativo usarán datos del Excel
             
-            if not datos_sin_fid:
-                print("ADVERTENCIA: No hay registros sin FID para el TXT NUEVO")
-                # Crear archivo vacío pero con encabezados
+            datos_completos = datos_salida
+            total_registros = len(datos_completos)
+            print(f"DEBUG generar_txt: Procesando TODOS los registros ({total_registros} totales)")
+            
+            if not datos_completos:
+                print("ADVERTENCIA: No hay registros para el TXT NUEVO")
                 datos_finales = []
             else:
-                # APLICAR PREPARACIÓN FINAL DE DATOS solo a registros sin FID
-                datos_finales = self._preparar_datos_finales(datos_sin_fid)
+                # APLICAR PREPARACIÓN FINAL DE DATOS a TODOS los registros
+                datos_finales = self._preparar_datos_finales(datos_completos)
+            
+            # ENRIQUECIMIENTO ORACLE PARA REGISTROS CON CÓDIGO OPERATIVO
+            if datos_finales:
+                print(f"DEBUG: Iniciando enriquecimiento Oracle NUEVO para {len(datos_finales)} registros")
+                
+                # Verificar conectividad Oracle (IGUAL QUE EN TXT BAJA)
+                if not OracleHelper.test_connection():
+                    print("⚠️ WARNING: Oracle no disponible para TXT NUEVO, continuando sin enriquecimiento")
+                else:
+                    print("✅ Oracle conectado para TXT NUEVO, iniciando enriquecimiento...")
+                    
+                    # Cargar datos CRUDOS del Excel para detectar 'Código FID_rep' real por índice
+                    raw_datos_excel = []
+                    try:
+                        processor = ExcelProcessor(self.proceso)
+                        raw_datos_excel, _ = processor.procesar_archivo()
+                        print(f"DEBUG: Cargados {len(raw_datos_excel)} registros crudos del Excel para detección de códigos")
+                    except Exception as e:
+                        print(f"⚠️ No se pudieron cargar datos crudos del Excel: {e}")
+
+                    codigos_encontrados = 0
+                    registros_enriquecidos = 0
+                    muestras = []  # Guardar algunas muestras de cambios para diagnóstico
+                    
+                    for i, registro in enumerate(datos_finales):
+                        try:
+                            # Buscar código operativo usando detección robusta (patrón Z+digitos en cualquier campo)
+                            # Usar el registro CRUDO del Excel si está disponible, porque el transformado puede haber perdido 'Código FID_rep'
+                            registro_excel = raw_datos_excel[i] if i < len(raw_datos_excel) else {}
+                            codigo_operativo = self._extraer_codigo_operativo(registro, registro_excel)
+                            
+                            if codigo_operativo and str(codigo_operativo).strip().upper().startswith('Z'):
+                                codigos_encontrados += 1
+                                print(f"🔍 Registro NUEVO {i+1} - Código operativo: {codigo_operativo}")
+                                
+                                # PASO 1: Obtener FID real desde código operativo
+                                fid_real = OracleHelper.obtener_fid_desde_codigo_operativo(codigo_operativo)
+                                
+                                if fid_real:
+                                    # PASO 2: Obtener datos específicos para TXT nuevo desde Oracle
+                                    datos_oracle = OracleHelper.obtener_datos_txt_nuevo_por_fid(fid_real)
+                                    
+                                    if datos_oracle:
+                                        # Aplicar enriquecimiento Oracle (IGUAL QUE EN TXT BAJA)
+                                        print(f"📊 Enriqueciendo registro NUEVO {i+1} con datos Oracle:")
+                                        print(f"   Coordenadas Excel: X={registro.get('COORDENADA_X')}, Y={registro.get('COORDENADA_Y')}")
+                                        print(f"   Coordenadas Oracle: X={datos_oracle.get('COORDENADA_X')}, Y={datos_oracle.get('COORDENADA_Y')}")
+                                        
+                                        old_x = registro.get('COORDENADA_X')
+                                        old_y = registro.get('COORDENADA_Y')
+                                        # APLICAR LOS DATOS ORACLE
+                                        if datos_oracle.get('COORDENADA_X'):
+                                            registro['COORDENADA_X'] = datos_oracle['COORDENADA_X']
+                                        if datos_oracle.get('COORDENADA_Y'):
+                                            registro['COORDENADA_Y'] = datos_oracle['COORDENADA_Y']
+                                        if datos_oracle.get('TIPO'):
+                                            registro['TIPO'] = datos_oracle['TIPO']
+                                        if datos_oracle.get('TIPO_ADECUACION'):
+                                            registro['TIPO_ADECUACION'] = datos_oracle['TIPO_ADECUACION']
+                                        if datos_oracle.get('PROPIETARIO'):
+                                            registro['PROPIETARIO'] = datos_oracle['PROPIETARIO']
+                                            registro['EMPRESA'] = datos_oracle['PROPIETARIO']  # EMPRESA = PROPIETARIO
+                                        if datos_oracle.get('UBICACION'):
+                                            registro['UBICACION'] = datos_oracle['UBICACION']
+                                        if datos_oracle.get('CLASIFICACION_MERCADO'):
+                                            registro['CLASIFICACION_MERCADO'] = datos_oracle['CLASIFICACION_MERCADO']
+                                        
+                                        # NOTA: No modificar ENLACE en TXT NUEVO; se mantiene el valor original del Excel
+                                        
+                                        registros_enriquecidos += 1
+                                        print(f"   ✅ APLICADO NUEVO: Nuevas coordenadas X={registro['COORDENADA_X']}, Y={registro['COORDENADA_Y']}")
+                                        print(f"   ENLACE asignado: {fid_real}")
+                                        # Guardar muestra hasta 3 registros
+                                        if len(muestras) < 3:
+                                            muestras.append({
+                                                'index': i+1,
+                                                'codigo_operativo': codigo_operativo,
+                                                'fid': str(fid_real),
+                                                'x_excel': str(old_x),
+                                                'y_excel': str(old_y),
+                                                'x_oracle': str(registro['COORDENADA_X']),
+                                                'y_oracle': str(registro['COORDENADA_Y'])
+                                            })
+                                    else:
+                                        print(f"   ⚠️ No se obtuvieron datos desde Oracle para FID {fid_real}")
+                                else:
+                                    print(f"   ⚠️ No se encontró FID real para código operativo {codigo_operativo}")
+                            else:
+                                # Si no hay código operativo, aplicar valores por defecto
+                                if i < 5:  # Solo log de los primeros 5 para no saturar
+                                    print(f"   ⏭️ Registro NUEVO {i+1} sin código operativo válido")
+                        
+                        except Exception as e:
+                            print(f"❌ Error enriqueciendo registro NUEVO {i+1}: {str(e)}")
+                            continue
+                    
+                    print("📊 RESUMEN Oracle NUEVO:")
+                    print(f"   Códigos operativos encontrados: {codigos_encontrados}")
+                    print(f"   Registros enriquecidos: {registros_enriquecidos}")
+                    print(f"   Total registros procesados: {len(datos_finales)}")
+                    print("DEBUG: Completado enriquecimiento Oracle NUEVO")
             
             # Los encabezados para TXT NUEVO nunca incluyen FID_ANTERIOR
             # porque este archivo es solo para registros NUEVOS (sin FID)
@@ -1166,6 +1606,30 @@ class FileGenerator:
             
             # Validar el archivo generado
             self._validar_archivo_txt(filepath)
+            print(f"TXT NUEVO generado en: {filepath}")
+
+            # Escribir archivo de diagnóstico con resumen del enriquecimiento
+            try:
+                diag_path = filepath.replace('.txt', '.diagnostics.txt')
+                with open(diag_path, 'w', encoding='utf-8') as df:
+                    df.write(f"Proceso: {self.proceso.id}\n")
+                    df.write(f"Registros totales: {len(datos_finales)}\n")
+                    # Si existen variables de resumen locales, escribirlas
+                    try:
+                        df.write(f"Codigos operativos detectados: {codigos_encontrados}\n")
+                        df.write(f"Registros enriquecidos: {registros_enriquecidos}\n")
+                    except Exception:
+                        pass
+                    df.write("Muestras (max 3):\n")
+                    try:
+                        for m in (muestras if 'muestras' in locals() else []):
+                            df.write(f"  #{m['index']}: Z={m['codigo_operativo']} FID={m['fid']} X/Y Excel=({m['x_excel']},{m['y_excel']}) -> X/Y Oracle=({m['x_oracle']},{m['y_oracle']})\n")
+                    except Exception:
+                        pass
+                    df.write("Nota: ENLACE no se modifica en TXT NUEVO.\n")
+                print(f"Diagnóstico NUEVO escrito en: {diag_path}")
+            except Exception as e:
+                print(f"⚠️ No se pudo escribir diagnóstico NUEVO: {e}")
             
             return filename
             
@@ -1369,40 +1833,112 @@ class FileGenerator:
 
             datos_finales = datos_finales_filtrados
             
-            # 4. CONSULTAR ORACLE PARA OBTENER COORDENADAS GPS
-            print(f"DEBUG: Iniciando consultas Oracle para {len(datos_finales)} registros")
-            for i, registro in enumerate(datos_finales):
-                try:
-                    # Extraer FID del registro
-                    fid_codigo = self._extraer_fid_rep(registro)
-                    if not fid_codigo:
-                        # Intentar con FID_ANTERIOR si existe
-                        fid_codigo = registro.get('FID_ANTERIOR', '')
-                    
-                    if fid_codigo and str(fid_codigo).strip().lower() not in ('', 'nan', 'none'):
-                        # Consultar Oracle para obtener coordenadas
-                        lat, lon = OracleHelper.obtener_coordenadas_por_fid(fid_codigo)
-                        
-                        # Agregar las coordenadas al registro
-                        registro['COOR_GPS_LAT'] = lat
-                        registro['COOR_GPS_LON'] = lon
-                        
-                        if i < 5:  # Solo log de los primeros 5 para no saturar
-                            print(f"DEBUG: Registro {i+1} FID={fid_codigo} -> lat={lat}, lon={lon}")
-                    else:
-                        # No hay FID válido, dejar campos vacíos
-                        registro['COOR_GPS_LAT'] = ''
-                        registro['COOR_GPS_LON'] = ''
-                        if i < 5:
-                            print(f"DEBUG: Registro {i+1} sin FID válido, coordenadas vacías")
-                            
-                except Exception as e:
-                    print(f"ERROR consultando Oracle para registro {i+1}: {str(e)}")
-                    # En caso de error, dejar campos vacíos
-                    registro['COOR_GPS_LAT'] = ''
-                    registro['COOR_GPS_LON'] = ''
+            # 4. ENRIQUECIMIENTO ORACLE COMPLETO PARA TXT BAJA
+            print(f"DEBUG: Iniciando enriquecimiento Oracle BAJA para {len(datos_finales)} registros")
             
-            print(f"DEBUG: Completadas consultas Oracle para {len(datos_finales)} registros")
+            # Verificar conectividad Oracle
+            if not OracleHelper.test_connection():
+                print("⚠️ WARNING: Oracle no disponible para TXT BAJA, continuando sin enriquecimiento")
+            else:
+                print("✅ Oracle conectado para TXT BAJA, iniciando enriquecimiento...")
+                
+                codigos_encontrados = 0
+                registros_enriquecidos = 0
+                
+                for i, registro in enumerate(datos_finales):
+                    try:
+                        # Buscar código operativo en el registro
+                        codigo_operativo = ''
+                        
+                        # Extraer código operativo usando métodos existentes
+                        codigo_operativo = self._extraer_fid_rep(registro)
+                        if not codigo_operativo:
+                            codigo_operativo = registro.get('FID_ANTERIOR', '')
+                        
+                        # También buscar en campos del Excel original
+                        if not codigo_operativo and i < len(self.proceso.datos_excel):
+                            registro_excel = self.proceso.datos_excel[i]
+                            for campo in ['Código FID_rep', 'Codigo FID_rep', 'CODIGO_FID_REP', 'FID_REP']:
+                                valor = registro_excel.get(campo, '')
+                                if valor and str(valor).strip().upper().startswith('Z'):
+                                    codigo_operativo = str(valor).strip()
+                                    break
+                        
+                        if codigo_operativo and str(codigo_operativo).strip().upper().startswith('Z'):
+                            codigos_encontrados += 1
+                            print(f"🔍 Registro BAJA {i+1} - Código operativo: {codigo_operativo}")
+                            
+                            # PASO 1: Obtener FID real desde código operativo
+                            fid_real = OracleHelper.obtener_fid_desde_codigo_operativo(codigo_operativo)
+                            
+                            if fid_real:
+                                # PASO 2: Obtener datos completos para TXT baja desde Oracle
+                                datos_oracle = OracleHelper.obtener_datos_txt_baja_por_fid(fid_real)
+                                
+                                if datos_oracle:
+                                    # Aplicar enriquecimiento Oracle
+                                    print(f"📊 Enriqueciendo registro BAJA {i+1} con datos Oracle:")
+                                    print(f"   Coordenadas Excel: X={registro.get('COORDENADA_X')}, Y={registro.get('COORDENADA_Y')}")
+                                    print(f"   Coordenadas Oracle: X={datos_oracle.get('COORDENADA_X')}, Y={datos_oracle.get('COORDENADA_Y')}")
+                                    
+                                    # APLICAR LOS DATOS ORACLE
+                                    if datos_oracle.get('COORDENADA_X'):
+                                        registro['COORDENADA_X'] = datos_oracle['COORDENADA_X']
+                                    if datos_oracle.get('COORDENADA_Y'):
+                                        registro['COORDENADA_Y'] = datos_oracle['COORDENADA_Y']
+                                    if datos_oracle.get('TIPO'):
+                                        registro['TIPO'] = datos_oracle['TIPO']
+                                    if datos_oracle.get('TIPO_ADECUACION'):
+                                        registro['TIPO_ADECUACION'] = datos_oracle['TIPO_ADECUACION']
+                                    if datos_oracle.get('PROPIETARIO'):
+                                        registro['PROPIETARIO'] = datos_oracle['PROPIETARIO']
+                                        registro['EMPRESA'] = datos_oracle['PROPIETARIO']
+                                    if datos_oracle.get('UBICACION'):
+                                        registro['UBICACION'] = datos_oracle['UBICACION']
+                                    if datos_oracle.get('CLASIFICACION_MERCADO'):
+                                        registro['CLASIFICACION_MERCADO'] = datos_oracle['CLASIFICACION_MERCADO']
+                                    
+                                    # Asignar coordenadas GPS también (para compatibilidad)
+                                    registro['COOR_GPS_LAT'] = datos_oracle.get('COORDENADA_Y', '')
+                                    registro['COOR_GPS_LON'] = datos_oracle.get('COORDENADA_X', '')
+                                    
+                                    # Asignar el FID real al campo FID_ANTERIOR y ENLACE
+                                    registro['FID_ANTERIOR'] = str(fid_real)
+                                    registro['ENLACE'] = str(fid_real)
+                                    
+                                    registros_enriquecidos += 1
+                                    print(f"   ✅ APLICADO BAJA: Nuevas coordenadas X={registro['COORDENADA_X']}, Y={registro['COORDENADA_Y']}")
+                                else:
+                                    # Fallback: usar método anterior para coordenadas GPS
+                                    lat, lon = OracleHelper.obtener_coordenadas_por_fid(fid_real)
+                                    registro['COOR_GPS_LAT'] = lat
+                                    registro['COOR_GPS_LON'] = lon
+                                    registro['FID_ANTERIOR'] = str(fid_real)
+                                    print(f"   ⚠️ Datos Oracle limitados, solo coordenadas GPS: lat={lat}, lon={lon}")
+                            else:
+                                print(f"   ⚠️ No se encontró FID real para código operativo {codigo_operativo}")
+                                # Dejar campos vacíos
+                                registro['COOR_GPS_LAT'] = ''
+                                registro['COOR_GPS_LON'] = ''
+                                registro['FID_ANTERIOR'] = codigo_operativo  # Mantener código original
+                        else:
+                            # No hay código operativo válido, dejar campos vacíos
+                            registro['COOR_GPS_LAT'] = ''
+                            registro['COOR_GPS_LON'] = ''
+                            if i < 5:
+                                print(f"   ⏭️ Registro BAJA {i+1} sin código operativo válido")
+                                
+                    except Exception as e:
+                        print(f"❌ Error enriqueciendo registro BAJA {i+1}: {str(e)}")
+                        # En caso de error, mantener valores originales
+                        continue
+                
+                print("📊 RESUMEN Oracle BAJA:")
+                print(f"   Códigos operativos encontrados: {codigos_encontrados}")
+                print(f"   Registros enriquecidos: {registros_enriquecidos}")
+                print(f"   Total registros procesados: {len(datos_finales)}")
+            
+            print(f"DEBUG: Completado enriquecimiento Oracle BAJA para {len(datos_finales)} registros")
             
             # 5. REGLA ESPECIAL PARA FID_ANTERIOR (IGUAL que generar_txt)
             incluir_fid_anterior = self._debe_incluir_fid_anterior(datos_finales)
@@ -1644,17 +2180,32 @@ class FileGenerator:
                 # Validar campos críticos específicos
                 if len(fields) >= 2:  # Al menos coordenadas
                     try:
-                        # Validar coordenadas si existen (permitir NULL para archivos de baja)
-                        coord_x = fields[0] if fields[0] else '0'
-                        coord_y = fields[1] if fields[1] else '0'
+                        # Detectar si es archivo de baja (tiene FID_ANTERIOR en primera columna)
+                        # Limpiar BOM si existe
+                        header_clean = [h.lstrip('\ufeff') for h in header_fields]
+                        es_archivo_baja = 'FID_ANTERIOR' in header_clean
                         
-                        # Permitir NULL en archivos de baja (que solo tienen FID y coordenadas)
-                        if coord_x.upper() == 'NULL' or coord_y.upper() == 'NULL':
-                            if len(header_fields) <= 3:  # Archivo de baja (FID_ANTERIOR, COOR_GPS_LAT, COOR_GPS_LON)
-                                continue  # Permitir NULL en archivos de baja
-                        
-                        float(coord_x.replace(',', '.'))
-                        float(coord_y.replace(',', '.'))
+                        if es_archivo_baja:
+                            # Para archivos de baja: FID_ANTERIOR|COOR_GPS_LAT|COOR_GPS_LON
+                            if len(fields) >= 3:
+                                lat = fields[1]  # COOR_GPS_LAT
+                                lon = fields[2]  # COOR_GPS_LON
+                                # Validar coordenadas de Oracle
+                                if lat and lon and lat != 'NULL' and lon != 'NULL':
+                                    float(lat.replace(',', '.'))
+                                    float(lon.replace(',', '.'))
+                        else:
+                            # Para archivos normales: COORDENADA_X|COORDENADA_Y|...
+                            coord_x = fields[0] if fields[0] else '0'
+                            coord_y = fields[1] if fields[1] else '0'
+                            
+                            # Permitir NULL en archivos de baja (que solo tienen FID y coordenadas)
+                            if coord_x.upper() == 'NULL' or coord_y.upper() == 'NULL':
+                                if len(header_fields) <= 3:  # Archivo de baja (FID_ANTERIOR, COOR_GPS_LAT, COOR_GPS_LON)
+                                    continue  # Permitir NULL en archivos de baja
+                            
+                            float(coord_x.replace(',', '.'))
+                            float(coord_y.replace(',', '.'))
                     except (ValueError, IndexError):
                         errores.append(f"Línea {i}: coordenadas inválidas")
             
