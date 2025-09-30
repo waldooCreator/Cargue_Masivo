@@ -1,0 +1,9 @@
+Proceso: 629c7979-175e-4c29-bfc1-faefe8aaffbf
+Registros totales: 38
+Codigos operativos detectados: 3
+Registros enriquecidos: 3
+Muestras (max 3):
+  #36: Z=Z238163 FID=37591015 X/Y Excel=(-73.215528,8.276731) -> X/Y Oracle=(-72.869852099,8.073460132)
+  #37: Z=Z251390 FID=38141915 X/Y Excel=(-73.206693,8.278232) -> X/Y Oracle=(-72.822089811,8.013523062)
+  #38: Z=Z144833 FID=38142268 X/Y Excel=(-73.219137,8.278774) -> X/Y Oracle=(-72.820796073,8.014273029)
+Nota: ENLACE no se modifica en TXT NUEVO.

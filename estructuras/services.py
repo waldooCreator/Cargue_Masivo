@@ -1491,6 +1491,33 @@ class FileGenerator:
                                 reg['UC'] = uc_val
                     except Exception:
                         continue
+
+                # Filtrar: excluir filas que tengan 'Código FID_rep' PERO no tengan UC
+                # Mantener un mapeo de índices originales para alinear con el Excel crudo en el enriquecimiento
+                idx_map = list(range(len(datos_finales)))
+                try:
+                    indices_con_fid_rep, _raw_no_usado = self._indices_con_fid_rep_exactos()
+                except Exception:
+                    indices_con_fid_rep, _raw_no_usado = (set(), [])
+
+                filtrados = []
+                idx_map_fil = []
+                descartados = 0
+                for i, reg in enumerate(datos_finales):
+                    orig_idx = idx_map[i]
+                    tiene_uc = bool(str(reg.get('UC', '')).strip())
+                    tiene_fid = orig_idx in indices_con_fid_rep
+                    if tiene_fid and not tiene_uc:
+                        # Excluir: solo desmantelada (tiene FID_rep) pero sin UC
+                        descartados += 1
+                        continue
+                    filtrados.append(reg)
+                    idx_map_fil.append(orig_idx)
+
+                if descartados:
+                    print(f"DEBUG NUEVO: Filas excluidas (tienen 'Código FID_rep' pero sin UC): {descartados}")
+                datos_finales = filtrados
+                idx_map = idx_map_fil
             
             # ENRIQUECIMIENTO ORACLE PARA REGISTROS CON CÓDIGO OPERATIVO
             if datos_finales:
@@ -1518,8 +1545,9 @@ class FileGenerator:
                     for i, registro in enumerate(datos_finales):
                         try:
                             # Buscar código operativo usando detección robusta (patrón Z+digitos en cualquier campo)
-                            # Usar el registro CRUDO del Excel si está disponible, porque el transformado puede haber perdido 'Código FID_rep'
-                            registro_excel = raw_datos_excel[i] if i < len(raw_datos_excel) else {}
+                            # Usar la fila CRUDA original mapeada por índice para que siga alineada tras el filtrado
+                            idx_excel = idx_map[i] if 'idx_map' in locals() and i < len(idx_map) else i
+                            registro_excel = raw_datos_excel[idx_excel] if idx_excel < len(raw_datos_excel) else {}
                             codigo_operativo = self._extraer_codigo_operativo(registro, registro_excel)
                             
                             if codigo_operativo and str(codigo_operativo).strip().upper().startswith('Z'):
@@ -2071,8 +2099,12 @@ class FileGenerator:
 
     def generar_xml_baja(self):
         """
-        Genera archivo XML de configuración para registros con 'Código FID_rep' válido,
-        siguiendo exactamente el mismo flujo que generar_xml()
+        Genera archivo XML de configuración para BAJA, alineado con el TXT BAJA.
+        Estructura exacta de campos (en este orden):
+        - FID_ANTERIOR
+        - COOR_GPS_LON
+        - COOR_GPS_LAT
+        Para cada campo: Componente=CCOMUN y Atributo=igual al nombre del campo.
         """
         try:
             from xml.etree.ElementTree import Element, SubElement, tostring
@@ -2093,42 +2125,21 @@ class FileGenerator:
             
             print(f"DEBUG: XML de baja - {registros_con_fid} registros con Código FID_rep válido de {len(self.proceso.datos_excel)} totales")
             
-            # 2. Crear estructura XML según especificación (IGUAL que generar_xml)
+            # 2. Crear estructura XML según especificación de BAJA
             root = Element('Configuracion')
             
-            # Elemento principal (IGUAL que generar_xml)
+            # Elemento principal (se mantiene igual que otros XML: 'Poste')
             elemento = SubElement(root, 'Elemento')
             elemento.text = 'Poste'
             
-            # Contenedor de campos (IGUAL que generar_xml)
+            # Contenedor de campos
             campos = SubElement(root, 'Campos')
             
-            # 3. Definición de campos EXACTA según generar_xml funcional
+            # 3. Definición de campos EXACTA para BAJA (alineada con TXT BAJA)
             campos_config = [
-                {'nombre': 'GRUPO', 'componente': 'EPOSTE_AT', 'atributo': 'GRUPO'},
-                {'nombre': 'TIPO', 'componente': 'EPOSTE_AT', 'atributo': 'TIPO'},
-                {'nombre': 'CLASE', 'componente': 'EPOSTE_AT', 'atributo': 'CLASE'},
-                {'nombre': 'USO', 'componente': 'EPOSTE_AT', 'atributo': 'USO'},
-                {'nombre': 'ESTADO', 'componente': 'CCOMUN', 'atributo': 'ESTADO'},
-                {'nombre': 'TIPO_ADECUACION', 'componente': 'EPOSTE_AT', 'atributo': 'TIPO_ADECUACION'},
-                {'nombre': 'PROPIETARIO', 'componente': 'CPROPIETARIO', 'atributo': 'PROPIETARIO_1'},
-                {'nombre': 'PORCENTAJE_PROPIEDAD', 'componente': 'CPROPIETARIO', 'atributo': 'PORCENTAJE_PROP_1'},
-                {'nombre': 'UBICACION', 'componente': 'CCOMUN', 'atributo': 'UBICACION'},
-                {'nombre': 'CODIGO_MATERIAL', 'componente': 'CCOMUN', 'atributo': 'CODIGO_MATERIAL'},
-                {'nombre': 'FECHA_INSTALACION', 'componente': 'CCOMUN', 'atributo': 'FECHA_INSTALACION'},
-                {'nombre': 'FECHA_OPERACION', 'componente': 'CCOMUN', 'atributo': 'FECHA_OPERACION'},
-                {'nombre': 'PROYECTO', 'componente': 'CCOMUN', 'atributo': 'PROYECTO'},
-                {'nombre': 'EMPRESA', 'componente': 'CCOMUN', 'atributo': 'EMPRESA_ORIGEN'},
-                {'nombre': 'OBSERVACIONES', 'componente': 'CCOMUN', 'atributo': 'OBSERVACIONES'},
-                {'nombre': 'CLASIFICACION_MERCADO', 'componente': 'CCOMUN', 'atributo': 'CLASIFICACION_MERCADO'},
-                {'nombre': 'TIPO_PROYECTO', 'componente': 'CCOMUN', 'atributo': 'TIPO_PROYECTO'},
-                {'nombre': 'ID_MERCADO', 'componente': 'CCOMUN', 'atributo': 'ID_MERCADO'},
-                {'nombre': 'UC', 'componente': 'CCOMUN', 'atributo': 'UC'},
-                {'nombre': 'ESTADO_SALUD', 'componente': 'CCOMUN', 'atributo': 'ESTADO_SALUD'},
-                {'nombre': 'OT_MAXIMO', 'componente': 'CCOMUN', 'atributo': 'OT_MAXIMO'},
-                {'nombre': 'CODIGO_MARCACION', 'componente': 'CCOMUN', 'atributo': 'CODIGO_MARCACION'},
-                {'nombre': 'SALINIDAD', 'componente': 'CCOMUN', 'atributo': 'SALINIDAD'},
-                {'nombre': 'G3E_GEOMETRY', 'componente': '', 'atributo': ''},
+                {'nombre': 'FID_ANTERIOR', 'componente': 'CCOMUN', 'atributo': 'FID_ANTERIOR'},
+                {'nombre': 'COOR_GPS_LON', 'componente': 'CCOMUN', 'atributo': 'COOR_GPS_LON'},
+                {'nombre': 'COOR_GPS_LAT', 'componente': 'CCOMUN', 'atributo': 'COOR_GPS_LAT'},
             ]
 
             # 4. Agregar cada campo con su número correcto (IGUAL que generar_xml)
@@ -2146,12 +2157,12 @@ class FileGenerator:
                 if campo_config['atributo']:
                     atributo.text = campo_config['atributo']
 
-            # 5. Formatear XML con indentación bonita (IGUAL que generar_xml)
+            # 5. Formatear XML con indentación bonita
             rough_string = tostring(root, 'utf-8')
             reparsed = minidom.parseString(rough_string)
             pretty_xml = reparsed.toprettyxml(indent="  ")
 
-            # Eliminar la declaración XML <?xml version="1.0" ?> (IGUAL que generar_xml)
+            # Eliminar la declaración XML <?xml version="1.0" ?>
             lines = pretty_xml.split('\n')
             if lines[0].startswith('<?xml'):
                 lines = lines[1:]
@@ -2160,7 +2171,7 @@ class FileGenerator:
 
             pretty_xml_sin_declaracion = '\n'.join(lines)
 
-            # 6. Escribir archivo con UTF-8 BOM (IGUAL que generar_xml)
+            # 6. Escribir archivo con UTF-8 BOM
             with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
                 f.write(pretty_xml_sin_declaracion)
 
