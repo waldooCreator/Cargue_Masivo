@@ -2552,7 +2552,7 @@ class FileGenerator:
             return 'texto'
 
     def generar_xml(self):
-        """Genera archivo XML con la estructura específica requerida para el sistema - SOLO REGISTROS SIN FID"""
+        """Genera archivo XML NUEVO alineado 1:1 con la estructura del TXT NUEVO (solo registros sin FID)."""
         try:
             from xml.etree.ElementTree import Element, SubElement, tostring
             from xml.dom import minidom
@@ -2584,12 +2584,17 @@ class FileGenerator:
             # Contenedor de campos
             campos = SubElement(root, 'Campos')
             
-            # Definición de campos EXACTA según tu XML funcional
+            # Estructura alineada 1:1 con el encabezado del TXT NUEVO (orden exacto)
             campos_config = [
+                # Coordenadas mapeadas a CCOMUN
+                {'nombre': 'COORDENADA_X', 'componente': 'CCOMUN', 'atributo': 'COOR_GPS_LON'},
+                {'nombre': 'COORDENADA_Y', 'componente': 'CCOMUN', 'atributo': 'COOR_GPS_LAT'},
+                # EPOSTE_AT
                 {'nombre': 'GRUPO', 'componente': 'EPOSTE_AT', 'atributo': 'GRUPO'},
                 {'nombre': 'TIPO', 'componente': 'EPOSTE_AT', 'atributo': 'TIPO'},
                 {'nombre': 'CLASE', 'componente': 'EPOSTE_AT', 'atributo': 'CLASE'},
                 {'nombre': 'USO', 'componente': 'EPOSTE_AT', 'atributo': 'USO'},
+                # CCOMUN y otros
                 {'nombre': 'ESTADO', 'componente': 'CCOMUN', 'atributo': 'ESTADO'},
                 {'nombre': 'TIPO_ADECUACION', 'componente': 'EPOSTE_AT', 'atributo': 'TIPO_ADECUACION'},
                 {'nombre': 'PROPIETARIO', 'componente': 'CPROPIETARIO', 'atributo': 'PROPIETARIO_1'},
@@ -2609,7 +2614,8 @@ class FileGenerator:
                 {'nombre': 'OT_MAXIMO', 'componente': 'CCOMUN', 'atributo': 'OT_MAXIMO'},
                 {'nombre': 'CODIGO_MARCACION', 'componente': 'CCOMUN', 'atributo': 'CODIGO_MARCACION'},
                 {'nombre': 'SALINIDAD', 'componente': 'CCOMUN', 'atributo': 'SALINIDAD'},
-                {'nombre': 'G3E_GEOMETRY', 'componente': '', 'atributo': ''},
+                # ENLACE sin mapeo a BD (vacío)
+                {'nombre': 'ENLACE', 'componente': '', 'atributo': ''},
             ]
 
             # Agregar cada campo con su número correcto
@@ -2620,10 +2626,12 @@ class FileGenerator:
                 nombre.text = campo_config['nombre']
 
                 componente = SubElement(campo_elem, 'Componente')
-                componente.text = campo_config['componente']
+                if campo_config['componente']:
+                    componente.text = campo_config['componente']
 
                 atributo = SubElement(campo_elem, 'Atributo')
-                atributo.text = campo_config['atributo']
+                if campo_config['atributo']:
+                    atributo.text = campo_config['atributo']
 
             # Formatear XML con indentación bonita
             rough_string = tostring(root, 'utf-8')
@@ -2643,7 +2651,7 @@ class FileGenerator:
             with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
                 f.write(pretty_xml_sin_declaracion)
 
-            print(f"Archivo XML NUEVO generado exitosamente: {filename} (configuración para {registros_sin_fid} registros)")
+            print(f"Archivo XML NUEVO generado exitosamente: {filename} (alineado al TXT NUEVO)")
             return filename
 
         except Exception as e:
