@@ -1,0 +1,7 @@
+Proceso: 85a8718b-0bff-42f1-b53e-14162979047b
+Registros totales: 36
+Codigos operativos detectados: 1
+Registros enriquecidos: 1
+Muestras (max 3):
+  #36: Z=Z238163 FID=37591015 X/Y Excel=(-73.215528,8.276731) -> X/Y Oracle=(-72.869852099,8.073460132)
+Nota: ENLACE no se modifica en TXT NUEVO.

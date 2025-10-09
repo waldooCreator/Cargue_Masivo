@@ -1,0 +1,15 @@
+﻿<Configuracion>
+  <Elemento>Poste</Elemento>
+  <Campos>
+    <Campo0>
+      <Nombre>G3E_FID</Nombre>
+      <Componente>CCOMUN</Componente>
+      <Atributo>G3E_FID</Atributo>
+    </Campo0>
+    <Campo1>
+      <Nombre>ESTADO</Nombre>
+      <Componente>CCOMUN</Componente>
+      <Atributo>ESTADO</Atributo>
+    </Campo1>
+  </Campos>
+</Configuracion>

@@ -1,0 +1,445 @@
+{% extends 'estructuras/base.html' %}
+{% load static %}
+
+{% block title %}Revisar Clasificación Automática{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2 class="text-primary-700">📊 Revisar Clasificación Automática</h2>
+                <a href="{% url 'estructuras:proceso_detalle' proceso.id %}" class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                    ← Volver al Proceso
+                </a>
+            </div>
+            
+            <!-- Información del Proceso -->
+            <div class="bg-gradient-to-r from-secondary/10 to-secondary-light/10 border border-secondary/20 rounded-lg p-4 mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <strong class="text-primary-700">Proceso ID:</strong> {{ proceso.id }}<br>
+                        <strong class="text-primary-700">Estado:</strong> <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary/10 text-secondary-dark">{{ proceso.get_estado_display }}</span>
+                    </div>
+                    <div>
+                        <strong class="text-primary-700">Total de Registros:</strong> {{ resumen.total_registros }}<br>
+                        <strong class="text-primary-700">Archivo:</strong> {{ proceso.archivo_excel.name }}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Resumen de Clasificación -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                    <div class="text-center">
+                        <div class="w-12 h-12 bg-gradient-to-r from-accent to-accent-light rounded-full flex items-center justify-center mx-auto mb-3">
+                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold text-primary-700">{{ resumen.expansion.cantidad }}</h3>
+                        <h6 class="text-sm font-semibold text-accent-dark mb-1">Expansión (T2/T4)</h6>
+                        <small class="text-gray-500">Estructuras nuevas sin FID_ANTERIOR</small>
+                    </div>
+                </div>
+                <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                    <div class="text-center">
+                        <div class="w-12 h-12 bg-gradient-to-r from-secondary to-secondary-light rounded-full flex items-center justify-center mx-auto mb-3">
+                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold text-primary-700">{{ resumen.reposicion_nuevo.cantidad }}</h3>
+                        <h6 class="text-sm font-semibold text-secondary-dark mb-1">Reposición Nuevo (T1/T3)</h6>
+                        <small class="text-gray-500">Mejora con FID_ANTERIOR</small>
+                    </div>
+                </div>
+                <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                    <div class="text-center">
+                        <div class="w-12 h-12 bg-gradient-to-r from-warning to-yellow-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold text-primary-700">{{ resumen.reposicion_bajo.cantidad }}</h3>
+                        <h6 class="text-sm font-semibold text-yellow-700 mb-1">Reposición Bajo (T1/T3)</h6>
+                        <small class="text-gray-500">Reemplazos simples y retiros con FID_ANTERIOR</small>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Tabs para revisar cada tipo -->
+            <div class="bg-white rounded-lg border border-gray-200 shadow-sm">
+                <!-- Tab Headers -->
+                <div class="border-b border-gray-200">
+                    <nav class="-mb-px flex" id="clasificacionTabs" role="tablist">
+                        <button class="w-1/3 py-4 px-6 text-center border-b-2 border-secondary font-medium text-sm text-secondary-dark bg-secondary/5" 
+                                id="expansion-tab" data-bs-toggle="tab" data-bs-target="#expansion" type="button" role="tab">
+                            <div class="flex items-center justify-center space-x-2">
+                                <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                                <span>Expansión</span>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-accent/10 text-accent-dark">{{ resumen.expansion.cantidad }}</span>
+                            </div>
+                        </button>
+                        <button class="w-1/3 py-4 px-6 text-center border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" 
+                                id="reposicion-nuevo-tab" data-bs-toggle="tab" data-bs-target="#reposicion-nuevo" type="button" role="tab">
+                            <div class="flex items-center justify-center space-x-2">
+                                <svg class="w-4 h-4 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                </svg>
+                                <span>Reposición Nuevo</span>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary/10 text-secondary-dark">{{ resumen.reposicion_nuevo.cantidad }}</span>
+                            </div>
+                        </button>
+                        <button class="w-1/3 py-4 px-6 text-center border-b-2 border-transparent font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" 
+                                id="reposicion-bajo-tab" data-bs-toggle="tab" data-bs-target="#reposicion-bajo" type="button" role="tab">
+                            <div class="flex items-center justify-center space-x-2">
+                                <svg class="w-4 h-4 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+                                </svg>
+                                <span>Reposición Bajo</span>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning/10 text-yellow-700">{{ resumen.reposicion_bajo.cantidad }}</span>
+                            </div>
+                        </button>
+                    </nav>
+                </div>
+                
+                <!-- Contenido de tabs -->
+                <div class="p-6">
+                    <!-- Tab Expansión -->
+                    <div class="tab-content" id="expansion">
+                        <div class="flex justify-between items-center mb-4">
+                            <h5 class="text-lg font-semibold text-primary-700 flex items-center">
+                                <svg class="w-5 h-5 text-accent mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                                Estructuras de Expansión
+                            </h5>
+                            <small class="text-gray-500">Mostrando primeros 10 de {{ resumen.expansion.cantidad }} registros</small>
+                        </div>
+                        {% if resumen.expansion.registros %}
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gradient-to-r from-accent/10 to-accent-light/10">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-primary-700 uppercase tracking-wider">Reg #</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-primary-700 uppercase tracking-wider">Norma</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-primary-700 uppercase tracking-wider">UC</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-primary-700 uppercase tracking-wider">KGF</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-primary-700 uppercase tracking-wider">Altura</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-primary-700 uppercase tracking-wider">Población</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-primary-700 uppercase tracking-wider">Tipo Inversión</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-primary-700 uppercase tracking-wider">FID Anterior</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-primary-700 uppercase tracking-wider">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-100">
+                                        {% for registro in resumen.expansion.registros %}
+                                        <tr id="registro-{{ registro.indice }}" class="hover:bg-gray-50">
+                                            <td class="px-6 py-4 whitespace-nowrap"><span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">{{ registro.indice }}</span></td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ registro.datos.Norma|default:"-" }}</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ registro.datos.Unidad_Constructiva|default:"-" }}</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ registro.datos.KGF|default:"-" }}</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ registro.datos.Altura|default:"-" }}m</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ registro.datos.Poblacion|default:"-" }}</td>
+                                            <td class="px-6 py-4 whitespace-nowrap"><span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-secondary/10 text-secondary-dark">{{ registro.tipo_inversion }}</span></td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ registro.fid_anterior|default:"N/A" }}</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                                <button class="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded-md text-primary-700 bg-primary/10 hover:bg-primary/20 btn-cambiar-clasificacion" 
+                                                        data-indice="{{ registro.indice }}" 
+                                                        data-tipo-actual="EXPANSION">
+                                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                                                    </svg>
+                                                    Cambiar
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="text-center py-8 text-gray-500">No se detectaron estructuras de expansión.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Botones de Acción -->
+            <div class="mt-6">
+                <div class="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h6 class="text-lg font-semibold text-primary-700 mb-1">¿La clasificación es correcta?</h6>
+                            <small class="text-gray-500">Revisa cada tipo y confirma para generar los archivos correspondientes</small>
+                        </div>
+                        <div class="flex space-x-3">
+                            <button type="button" 
+                                    class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-secondary"
+                                    onclick="guardarAjustes()">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
+                                </svg>
+                                Guardar Ajustes
+                            </button>
+                            <button type="button" 
+                                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-accent to-accent-light hover:from-accent-dark hover:to-accent focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent"
+                                    onclick="confirmarClasificacion()">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                                Confirmar y Continuar Proceso
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para cambiar clasificación -->
+<div class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden" id="modalCambiarClasificacion">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium text-primary-700">Cambiar Clasificación</h3>
+                <button type="button" class="text-gray-400 hover:text-gray-600" onclick="cerrarModal()">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="mt-2 px-2 py-3">
+                <p class="text-sm text-gray-500 mb-4">Cambiar clasificación del registro <strong id="modal-registro-id"></strong>:</p>
+                <div class="mb-4">
+                    <label for="nueva-clasificacion" class="block text-sm font-medium text-primary-700 mb-2">Nueva clasificación:</label>
+                    <select id="nueva-clasificacion" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary">
+                        <option value="EXPANSION">Expansión (T2/T4)</option>
+                        <option value="REPOSICION_NUEVO">Reposición Nuevo (T1/T3)</option>
+                        <option value="REPOSICION_BAJO">Reposición Bajo (T1/T3) - incluye retiros</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-3 mt-4">
+                <button type="button" 
+                        class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                        onclick="cerrarModal()">
+                    Cancelar
+                </button>
+                <button type="button" 
+                        class="px-4 py-2 bg-gradient-to-r from-secondary to-secondary-light text-white rounded-md hover:from-secondary-dark hover:to-secondary focus:outline-none focus:ring-2 focus:ring-secondary"
+                        onclick="aplicarCambioClasificacion()">
+                    Aplicar Cambio
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let ajustesPendientes = [];
+let registroActual = null;
+
+// Event listener para los botones de cambiar clasificación
+document.addEventListener('DOMContentLoaded', function() {
+    const botonesClasificacion = document.querySelectorAll('.btn-cambiar-clasificacion');
+    botonesClasificacion.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const indice = this.getAttribute('data-indice');
+            const tipoActual = this.getAttribute('data-tipo-actual');
+            cambiarClasificacion(indice, tipoActual);
+        });
+    });
+    
+    // Tab functionality
+    const tabButtons = document.querySelectorAll('[role="tab"]');
+    tabButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            // Remove active classes from all tabs
+            tabButtons.forEach(tab => {
+                tab.classList.remove('border-secondary', 'text-secondary-dark', 'bg-secondary/5');
+                tab.classList.add('border-transparent', 'text-gray-500');
+            });
+            
+            // Add active classes to clicked tab
+            this.classList.remove('border-transparent', 'text-gray-500');
+            this.classList.add('border-secondary', 'text-secondary-dark', 'bg-secondary/5');
+        });
+    });
+});
+
+function cambiarClasificacion(indiceRegistro, tipoActual) {
+    registroActual = {
+        indice: indiceRegistro,
+        tipoActual: tipoActual
+    };
+    
+    document.getElementById('modal-registro-id').textContent = indiceRegistro;
+    document.getElementById('nueva-clasificacion').value = tipoActual;
+    document.getElementById('modalCambiarClasificacion').classList.remove('hidden');
+}
+
+function cerrarModal() {
+    document.getElementById('modalCambiarClasificacion').classList.add('hidden');
+}
+
+function aplicarCambioClasificacion() {
+    const nuevoTipo = document.getElementById('nueva-clasificacion').value;
+    
+    if (registroActual && nuevoTipo !== registroActual.tipoActual) {
+        // Agregar a ajustes pendientes
+        ajustesPendientes.push({
+            indice: registroActual.indice,
+            tipo_anterior: registroActual.tipoActual,
+            tipo_nuevo: nuevoTipo
+        });
+        
+        // Actualizar UI
+        const fila = document.getElementById(`registro-${registroActual.indice}`);
+        if (fila) {
+            fila.classList.add('bg-yellow-50');
+            fila.querySelector('td:first-child span').textContent = `${registroActual.indice} ✏️`;
+        }
+        
+        // Mostrar notificación
+        mostrarNotificacion(`Registro ${registroActual.indice} marcado para cambio a ${nuevoTipo}`, 'info');
+    }
+    
+    cerrarModal();
+}
+
+function guardarAjustes() {
+    if (ajustesPendientes.length === 0) {
+        mostrarNotificacion('No hay ajustes pendientes para guardar', 'warning');
+        return;
+    }
+    
+    fetch(`{% url 'estructuras:revisar_clasificacion' proceso.id %}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+            ajustes: ajustesPendientes,
+            confirmar: false
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            mostrarNotificacion(data.mensaje, 'success');
+            ajustesPendientes = [];
+        } else {
+            mostrarNotificacion(data.error, 'error');
+        }
+    })
+    .catch(error => {
+        mostrarNotificacion('Error guardando ajustes: ' + error, 'error');
+    });
+}
+
+function confirmarClasificacion() {
+    if (confirm('¿Confirmar la clasificación y continuar con el proceso?\n\nEsto continuará con el flujo normal de completar datos.')) {
+        // Guardar ajustes y confirmar
+        fetch(`{% url 'estructuras:revisar_clasificacion' proceso.id %}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify({
+                ajustes: ajustesPendientes,
+                confirmar: true
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                mostrarNotificacion(data.mensaje, 'success');
+                if (data.redirect_url) {
+                    setTimeout(() => {
+                        window.location.href = data.redirect_url;
+                    }, 2000);
+                }
+            } else {
+                mostrarNotificacion(data.error, 'error');
+            }
+        })
+        .catch(error => {
+            mostrarNotificacion('Error confirmando clasificación: ' + error, 'error');
+        });
+    }
+}
+
+function mostrarNotificacion(mensaje, tipo) {
+    const alertDiv = document.createElement('div');
+    let bgColor = 'bg-gray-500';
+    let textColor = 'text-white';
+    
+    switch(tipo) {
+        case 'success':
+            bgColor = 'bg-gradient-to-r from-accent to-accent-light';
+            break;
+        case 'error':
+            bgColor = 'bg-red-500';
+            break;
+        case 'warning':
+            bgColor = 'bg-warning';
+            break;
+        case 'info':
+            bgColor = 'bg-gradient-to-r from-secondary to-secondary-light';
+            break;
+    }
+    
+    alertDiv.className = `fixed top-4 right-4 ${bgColor} ${textColor} px-6 py-3 rounded-lg shadow-lg z-50 transform translate-x-full transition-transform duration-300`;
+    alertDiv.innerHTML = `
+        <div class="flex items-center justify-between">
+            <span class="font-medium">${mensaje}</span>
+            <button class="ml-4 text-white hover:text-gray-200" onclick="this.parentElement.parentElement.remove()">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+    `;
+    document.body.appendChild(alertDiv);
+    
+    // Animate in
+    setTimeout(() => {
+        alertDiv.classList.remove('translate-x-full');
+    }, 100);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.classList.add('translate-x-full');
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.parentNode.removeChild(alertDiv);
+                }
+            }, 300);
+        }
+    }, 5000);
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}

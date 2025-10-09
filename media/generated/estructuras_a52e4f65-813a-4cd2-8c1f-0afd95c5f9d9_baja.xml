@@ -1,0 +1,20 @@
+﻿<Configuracion>
+  <Elemento>Poste</Elemento>
+  <Campos>
+    <Campo0>
+      <Nombre>G3E_FID</Nombre>
+      <Componente>CCOMUN</Componente>
+      <Atributo>G3E_FID</Atributo>
+    </Campo0>
+    <Campo1>
+      <Nombre>COOR_GPS_LON</Nombre>
+      <Componente>CCOMUN</Componente>
+      <Atributo>COOR_GPS_LON</Atributo>
+    </Campo1>
+    <Campo2>
+      <Nombre>COOR_GPS_LAT</Nombre>
+      <Componente>CCOMUN</Componente>
+      <Atributo>COOR_GPS_LAT</Atributo>
+    </Campo2>
+  </Campos>
+</Configuracion>
