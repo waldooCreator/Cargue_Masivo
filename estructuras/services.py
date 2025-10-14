@@ -521,6 +521,164 @@ class OracleHelper:
             return {}
 
     @classmethod
+    def obtener_datos_norma_por_fid(cls, fid_real: str) -> Dict[str, str]:
+        """
+        Obtiene campos útiles para el archivo de Norma a partir del FID real.
+
+        Intenta traer:
+        - CIRCUITO: desde CCOMUN si existe alguna columna relacionada (CIRCUITO / NOMBRE_CIRCUITO).
+        - CODIGO_TRAFO: desde EPOSTE_AT si existe alguna columna relacionada (CODIGO_TRAFO / COD_TRAFO / CODIGO_TRANSFORMADOR).
+        - TIPO_ADECUACION: desde EPOSTE_AT (TIPO_ADECUACION) si existe.
+
+        Si no hay conexión o no existen las columnas, retorna {}.
+        """
+        resultado: Dict[str, str] = {}
+        # Verificar si Oracle está habilitado
+        if hasattr(settings, 'ORACLE_ENABLED') and not settings.ORACLE_ENABLED:
+            print(f"DEBUG Oracle: Consultas Oracle deshabilitadas para obtener_datos_norma_por_fid({fid_real})")
+            return resultado
+
+        if not fid_real:
+            return resultado
+
+        fid_limpio = str(fid_real).strip()
+        if not fid_limpio or fid_limpio.lower() in ('nan', 'none', ''):
+            return resultado
+
+        try:
+            oracle_config = cls.get_oracle_config()
+            with oracledb.connect(**oracle_config) as connection:
+                with connection.cursor() as cursor:
+                    # Configurar timeout
+                    try:
+                        cursor.callTimeout = 5000
+                    except AttributeError:
+                        pass
+
+                    # 1) Detectar columnas disponibles para CIRCUITO en CCOMUN
+                    circuito_col = None
+                    try:
+                        cursor.execute(
+                            """
+                            SELECT UPPER(COLUMN_NAME)
+                            FROM USER_TAB_COLUMNS
+                            WHERE UPPER(TABLE_NAME) = 'CCOMUN'
+                            """
+                        )
+                        cols = {row[0] for row in (cursor.fetchall() or [])}
+                        for candidato in ['CIRCUITO', 'NOMBRE_CIRCUITO', 'CIRCUITO_NOMBRE', 'CIRCUITO_ID', 'ID_CIRCUITO']:
+                            if candidato in cols:
+                                circuito_col = candidato
+                                break
+                    except Exception as e_cols:
+                        print(f"DEBUG Oracle: No fue posible leer columnas de CCOMUN: {e_cols}")
+
+                    if circuito_col:
+                        try:
+                            cursor.execute(
+                                f"SELECT {circuito_col} FROM CCOMUN WHERE G3E_FID = :fid_param",
+                                {"fid_param": fid_limpio}
+                            )
+                            row = cursor.fetchone()
+                            circuito_val = str(row[0]).strip() if row and row[0] is not None else ''
+                            if circuito_val:
+                                resultado['CIRCUITO'] = circuito_val
+                        except Exception as e_circ:
+                            print(f"DEBUG Oracle: Error consultando CIRCUITO ({circuito_col}) en CCOMUN: {e_circ}")
+
+                    # 2) Detectar columnas disponibles para CODIGO_TRAFO, TIPO_ADECUACION, NORMA, MACRONORMA, CANTIDAD en EPOSTE_AT
+                    trafo_col = None
+                    tipo_adecuacion_col = None
+                    norma_col = None
+                    macronorma_col = None
+                    cantidad_col = None
+                    try:
+                        cursor.execute(
+                            """
+                            SELECT UPPER(COLUMN_NAME)
+                            FROM USER_TAB_COLUMNS
+                            WHERE UPPER(TABLE_NAME) = 'EPOSTE_AT'
+                            """
+                        )
+                        cols_p = {row[0] for row in (cursor.fetchall() or [])}
+                        for candidato in ['CODIGO_TRAFO', 'COD_TRAFO', 'CODIGO_TRANSFORMADOR']:
+                            if candidato in cols_p:
+                                trafo_col = candidato
+                                break
+                        for candidato in ['TIPO_ADECUACION']:
+                            if candidato in cols_p:
+                                tipo_adecuacion_col = candidato
+                                break
+                        for candidato in ['NORMA', 'CODIGO_NORMA', 'NORMA_ID']:
+                            if candidato in cols_p:
+                                norma_col = candidato
+                                break
+                        for candidato in ['MACRONORMA', 'MACRO_NORMA', 'CODIGO_MACRONORMA']:
+                            if candidato in cols_p:
+                                macronorma_col = candidato
+                                break
+                        for candidato in ['CANTIDAD', 'CANT', 'ALTURA']:
+                            if candidato in cols_p:
+                                cantidad_col = candidato
+                                break
+                    except Exception as e_cols2:
+                        print(f"DEBUG Oracle: No fue posible leer columnas de EPOSTE_AT: {e_cols2}")
+
+                    # Construir query dinámica si hay alguna columna disponible
+                    if any([trafo_col, tipo_adecuacion_col, norma_col, macronorma_col, cantidad_col]):
+                        try:
+                            select_cols = []
+                            if trafo_col:
+                                select_cols.append(trafo_col)
+                            if tipo_adecuacion_col:
+                                select_cols.append(tipo_adecuacion_col)
+                            if norma_col:
+                                select_cols.append(norma_col)
+                            if macronorma_col:
+                                select_cols.append(macronorma_col)
+                            if cantidad_col:
+                                select_cols.append(cantidad_col)
+                            cols_sql = ', '.join(select_cols)
+                            cursor.execute(
+                                f"SELECT {cols_sql} FROM EPOSTE_AT WHERE G3E_FID = :fid_param",
+                                {"fid_param": fid_limpio}
+                            )
+                            row = cursor.fetchone()
+                            if row:
+                                idx = 0
+                                if trafo_col:
+                                    val = row[idx]
+                                    idx += 1
+                                    if val is not None and str(val).strip():
+                                        resultado['CODIGO_TRAFO'] = str(val).strip()
+                                if tipo_adecuacion_col:
+                                    val = row[idx]
+                                    idx += 1
+                                    if val is not None and str(val).strip():
+                                        resultado['TIPO_ADECUACION'] = str(val).strip()
+                                if norma_col:
+                                    val = row[idx]
+                                    idx += 1
+                                    if val is not None and str(val).strip():
+                                        resultado['NORMA'] = str(val).strip()
+                                if macronorma_col:
+                                    val = row[idx]
+                                    idx += 1
+                                    if val is not None and str(val).strip():
+                                        resultado['MACRONORMA'] = str(val).strip()
+                                if cantidad_col:
+                                    val = row[idx]
+                                    # idx += 1  # último opcional
+                                    if val is not None and str(val).strip():
+                                        resultado['CANTIDAD'] = str(int(val)) if str(val).strip().isdigit() else str(val).strip()
+                        except Exception as e_ep:
+                            print(f"DEBUG Oracle: Error consultando EPOSTE_AT ({cols_sql}): {e_ep}")
+
+        except Exception as e:
+            print(f"❌ Oracle ERROR obtener_datos_norma_por_fid({fid_limpio}): {e}")
+        return resultado
+
+    @classmethod
     def obtener_uc_por_fid(cls, fid_real: str) -> str:
         """
         Obtiene la Unidad Constructiva (UC) desde Oracle usando el FID real.
@@ -625,40 +783,47 @@ class OracleHelper:
         except Exception as e:
             print(f"❌ Oracle ERROR obtener_uc_por_fid({fid_limpio}): {e}")
             return ''
-            
-        if not fid_real:
+
+    @classmethod
+    def obtener_norma_por_fid(cls, fid: str) -> Dict[str, str]:
+        """
+        Obtiene datos de norma por FID desde BD (ccomun JOIN norma).
+        Retorna dict con: NORMA, GRUPO, CIRCUITO, CODIGO_TRAFO, MACRONORMA, CANTIDAD, TIPO_ADECUACION
+        Si no hay datos o error, retorna {}.
+        """
+        if hasattr(settings, 'ORACLE_ENABLED') and not settings.ORACLE_ENABLED:
+            print(f"DEBUG Oracle: Consultas Oracle deshabilitadas para obtener_norma_por_fid({fid})")
             return {}
-            
-        # Limpiar el FID
-        fid_limpio = str(fid_real).strip()
+
+        if not fid:
+            return {}
+        
+        fid_limpio = str(fid).strip()
         if not fid_limpio or fid_limpio.lower() in ('nan', 'none', ''):
             return {}
-            
-        print(f"🔍 Buscando datos TXT baja para FID real: {fid_limpio}")
-        
+
         try:
             oracle_config = cls.get_oracle_config()
             with oracledb.connect(**oracle_config) as connection:
                 with connection.cursor() as cursor:
-                    # Configurar timeout
                     try:
                         cursor.callTimeout = 5000
                     except AttributeError:
                         pass
-                    
-                    # Query específica para TXT baja con JOIN explícito de tablas (igual que txt_nuevo)
+
+                    # Query para obtener datos de norma por FID
+                    # TODOS los campos están en la tabla norma (n)
                     query = """
                     SELECT 
-                        c.coor_gps_lon,
-                        c.coor_gps_lat,
-                        p.tipo,
-                        p.tipo_adecuacion,
-                        pr.propietario_1,
-                        c.ubicacion,
-                        c.clasificacion_mercado
+                        n.norma,
+                        n.grupo,
+                        n.circuito,
+                        n.codigo_trafo,
+                        n.macronorma,
+                        n.cantidad,
+                        n.tipo_adecuacion
                     FROM ccomun c
-                        LEFT JOIN eposte_at p ON c.g3e_fid = p.g3e_fid
-                        LEFT JOIN cpropietario pr ON c.g3e_fid = pr.g3e_fid
+                    JOIN norma n ON c.g3e_fid = n.g3e_fid
                     WHERE c.g3e_fid = :fid_param
                     """
                     
@@ -666,32 +831,27 @@ class OracleHelper:
                     result = cursor.fetchone()
                     
                     if result:
-                        lon, lat, tipo, tipo_adec, propietario, ubicacion, clasif_mercado = result
+                        norma, grupo, circuito, codigo_trafo, macronorma, cantidad, tipo_adec = result
                         
                         datos = {
-                            'COORDENADA_X': str(lon) if lon is not None else '',
-                            'COORDENADA_Y': str(lat) if lat is not None else '',
-                            'TIPO': str(tipo) if tipo is not None else '',
-                            'TIPO_ADECUACION': str(tipo_adec) if tipo_adec is not None else '',
-                            'PROPIETARIO': str(propietario) if propietario is not None else '',
-                            'UBICACION': str(ubicacion) if ubicacion is not None else '',
-                            'CLASIFICACION_MERCADO': str(clasif_mercado) if clasif_mercado is not None else ''
+                            'NORMA': str(norma).strip() if norma is not None else '',
+                            'GRUPO': str(grupo).strip() if grupo is not None else '',
+                            'CIRCUITO': str(circuito).strip() if circuito is not None else '',
+                            'CODIGO_TRAFO': str(codigo_trafo).strip() if codigo_trafo is not None else '',
+                            'MACRONORMA': str(macronorma).strip() if macronorma is not None else '',
+                            'CANTIDAD': str(int(cantidad)) if cantidad is not None and str(cantidad).strip() != '' else '',
+                            'TIPO_ADECUACION': str(tipo_adec).strip() if tipo_adec is not None else ''
                         }
                         
-                        print(f"✅ Oracle TXT baja FID {fid_limpio}: lon={datos['COORDENADA_X']}, lat={datos['COORDENADA_Y']}, tipo={datos['TIPO']}")
+                        print(f"✅ Oracle obtener_norma_por_fid({fid_limpio}): NORMA={datos['NORMA']}, CIRCUITO={datos['CIRCUITO']}, CANTIDAD={datos['CANTIDAD']}")
                         return datos
                     else:
-                        print(f"⚠️ Oracle: No se encontraron datos baja para FID {fid_limpio}")
+                        print(f"⚠️ Oracle: No se encontraron datos de norma para FID {fid_limpio}")
                         return {}
                         
         except Exception as e:
             error_msg = str(e)
-            if "timed out" in error_msg.lower():
-                print(f"⏱️ Oracle TIMEOUT para FID TXT baja {fid_limpio}: Conexión expiró.")
-            elif "connection" in error_msg.lower():
-                print(f"🔌 Oracle CONEXIÓN para FID TXT baja {fid_limpio}: No se pudo conectar.")
-            else:
-                print(f"❌ Oracle ERROR para FID TXT baja {fid_limpio}: {error_msg}")
+            print(f"❌ Oracle ERROR obtener_norma_por_fid({fid_limpio}): {error_msg}")
             return {}
 
 
@@ -952,6 +1112,13 @@ class DataTransformer:
             'FID_ANTERIOR': 'FID_ANTERIOR',
             'Tipo_accion_sal': 'Tipo_accion_sal',
             'Tipo_accion_ent': 'Tipo_accion_ent',
+            # Nuevo: mapear 'Tipo inversión' del Excel para TIPO_PROYECTO
+            'Tipo inversión': 'TIPO_INVERSION_ROMANO',
+            'Tipo inversion': 'TIPO_INVERSION_ROMANO',
+            'TIPO INVERSION': 'TIPO_INVERSION_ROMANO',
+            'TIPO INVERSIÓN': 'TIPO_INVERSION_ROMANO',
+            'tipo inversion': 'TIPO_INVERSION_ROMANO',
+            'tipo inversión': 'TIPO_INVERSION_ROMANO',
             # NUEVO: soportar el campo del Excel 'CodigoMaterial'
             'CodigoMaterial': 'CODIGO_MATERIAL',
             'CODIGOMATERIAL': 'CODIGO_MATERIAL',
@@ -994,6 +1161,18 @@ class DataTransformer:
                 registro_salida['_CODIGO_MATERIAL_FROM_EXCEL'] = True
             else:
                 registro_salida['_CODIGO_MATERIAL_FROM_EXCEL'] = False
+
+            # NUEVO: si el Excel trae 'Tipo inversión' (en romano), convertir a Tn y colocar en TIPO_PROYECTO
+            try:
+                tipo_inv_excel = registro_normalizado.get('TIPO_INVERSION_ROMANO', '')
+                if tipo_inv_excel:
+                    tipo_excel_convertido = self.clasificador._convertir_tipo_proyecto(str(tipo_inv_excel))
+                    if tipo_excel_convertido:
+                        registro_salida['TIPO_PROYECTO'] = tipo_excel_convertido
+                        # Guardar un respaldo para preservar este valor tras la clasificación
+                        registro_salida['_TIPO_PROYECTO_EXCEL'] = tipo_excel_convertido
+            except Exception:
+                pass
             
             # Agregar campos faltantes con valores por defecto
             for campo_salida in self.estructura_config['CAMPOS_SALIDA_DATOS']:
@@ -1481,9 +1660,11 @@ class FileGenerator:
                 registro_final['ESTADO'] = 'OPERACION'
             
             # 2. Asegurar TIPO_PROYECTO - preservar valor de datos_excel si existe
-            if not registro_final.get('TIPO_PROYECTO'):
-                # El valor ya debería estar convertido correctamente en el proceso de transformación
-                # Solo como fallback, generar desde UC
+            # Si vino del Excel 'Tipo inversión', siempre priorizarlo sobre la clasificación
+            if registro_final.get('_TIPO_PROYECTO_EXCEL'):
+                registro_final['TIPO_PROYECTO'] = registro_final.get('_TIPO_PROYECTO_EXCEL')
+            elif not registro_final.get('TIPO_PROYECTO'):
+                # Fallback: generar desde UC si no hay valor
                 uc = registro_final.get('UC', '')
                 if uc:
                     tipo_proyecto = self.clasificador._generar_tipo_proyecto_desde_nivel_tension(uc)
@@ -1714,6 +1895,7 @@ class FileGenerator:
                 })
 
             # VALIDACION: ENLACE (Identificador) no puede estar vacío ni repetido (igualdad EXACTA)
+            # Nota: no acumular errores para filas que corresponden a "solo desmanteladas"
             if datos_finales:
                 # Necesitamos el numero de linea del Excel para mensajes simples
                 header_row = excel_meta.get('header_row') if 'excel_meta' in locals() else None
@@ -2632,58 +2814,228 @@ class FileGenerator:
             return {"error": f"Error generando resumen: {str(e)}"}
     
     def generar_norma_txt(self):
-        """Genera archivo TXT de norma con los datos transformados para cargue masivo"""
+        """
+        Genera archivo TXT de norma con datos desde BD para bajas y Excel para el resto.
+        
+        ENLACE|NORMA|GRUPO|CIRCUITO|CODIGO_TRAFO|MACRONORMA|CANTIDAD|TIPO_ADECUACION
+        
+        Para BAJAS (detectadas por código operativo Z... en hoja Estructuras):
+        - Resuelve FID desde código operativo
+        - Consulta BD (ccomun JOIN norma) por FID
+        - Hace merge campo a campo: si BD trae valor no vacío, lo usa; sino conserva Excel
+        
+        Para NO-BAJAS: usa valores del Excel directamente
+        """
         try:
             filename = f"norma_{self.proceso.id}.txt"
             filepath = os.path.join(self.base_path, filename)
-            
-            # Obtener datos de norma
-            if not self.proceso.datos_norma:
-                raise Exception("No hay datos de norma para generar archivo")
-            
-            # Orden de campos para archivo de norma según especificación - ACTUALIZADO PARA COINCIDIR CON XML
-            campos_orden = [
-                'ENLACE', 'NORMA', 'GRUPO', 'CIRCUITO', 'CODIGO_TRAFO',
-                'CANTIDAD','MACRONORMA', 'FECHA_INSTALACION', 'TIPO_ADECUACION', 'OBSERVACIONES'
-            ]
-            
-            # Preparar datos de norma aplicando transformaciones necesarias
-            datos_norma_finales = self._preparar_datos_norma_finales(self.proceso.datos_norma)
-            
-            with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
-                # Escribir encabezados
-                f.write('|'.join(campos_orden) + '\n')
+
+            # 1) Intentar leer hoja de Normas explícita del Excel como fuente preferida
+            registros_norma = []
+            try:
+                archivo_path = self.proceso.archivo_excel.path
+                # Candidatos de nombre de hoja
+                hojas_candidatas = []
+                try:
+                    hojas = pd.ExcelFile(archivo_path).sheet_names
+                    hojas_candidatas = [
+                        h for h in hojas if str(h).strip().lower() in (
+                            'norma de expansion', 'normas', 'norma', 'norma de reposicion', 'norma de reposición'
+                        )
+                    ]
+                except Exception:
+                    hojas_candidatas = []
+
+                if hojas_candidatas:
+                    nombre_hoja_norma = hojas_candidatas[0]
+                    # Detectar fila de encabezado 0-2
+                    df_norma = None
+                    for header_row in [0, 1, 2]:
+                        try:
+                            temp_df = pd.read_excel(archivo_path, sheet_name=nombre_hoja_norma, header=header_row)
+                            valid_headers = [c for c in temp_df.columns if not str(c).startswith('Unnamed:') and str(c).strip().lower() != 'nan']
+                            if len(valid_headers) >= 3:
+                                df_norma = temp_df
+                                break
+                        except Exception:
+                            continue
+                    if df_norma is None:
+                        df_norma = pd.read_excel(archivo_path, sheet_name=nombre_hoja_norma, header=0)
+
+                    # Normalizar y mapear
+                    for _, row in df_norma.iterrows():
+                        def g(*keys):
+                            for k in keys:
+                                if k in df_norma.columns and pd.notna(row.get(k)) and str(row.get(k)).strip():
+                                    return str(row.get(k)).strip()
+                            return ''
+
+                        reg = {
+                            'ENLACE': g('Identificador', 'ENLACE', 'Pm', 'PM', 'Identificador PM'),
+                            'NORMA': g('Norma', 'NORMA'),
+                            'GRUPO': g('GRUPO', 'Grupo'),
+                            'CIRCUITO': g('CIRCUITO', 'Circuito') or getattr(self.proceso, 'circuito', '') or '',
+                            'CODIGO_TRAFO': g('Codigo. Transformador (1T,2T,3T,4T,5T)', 'CODIGO_TRAFO', 'Codigo Trafo'),
+                            'MACRONORMA': g('MACRONORMA', 'Macronorma'),
+                            'CANTIDAD': g('Altura', 'CANTIDAD'),
+                            'TIPO_ADECUACION': g('Disposicion', 'TIPO_ADECUACION'),
+                        }
+                        # Solo agregar si al menos NORMA o ENLACE están presentes
+                        if reg['NORMA'] or reg['ENLACE']:
+                            registros_norma.append(reg)
+            except Exception as e:
+                print(f"DEBUG leer hoja Norma: {e}")
+
+            # 1b) Fallback: usar datos_norma procesados o mapear desde datos_excel
+            if not registros_norma:
+                if self.proceso.datos_norma:
+                    registros_norma = self._preparar_datos_norma_finales(self.proceso.datos_norma)
+                else:
+                    if not self.proceso.datos_excel:
+                        raise Exception("No hay datos para generar archivo de norma")
+                    mapper = DataMapper(self.tipo_estructura)
+                    registros_norma = self._preparar_datos_norma_finales(
+                        mapper.mapear_a_norma(self.proceso.datos_excel, getattr(self.proceso, 'circuito', '') or '')
+                    )
+
+            # 2) Detectar bajas: buscar código operativo Z###### en hoja "Estructuras_N1-N2-N3"
+            enlace_a_codigo_op = {}
+            try:
+                archivo_path = self.proceso.archivo_excel.path
+                print(f"[TXT Norma] Leyendo archivo Excel para detectar bajas: {archivo_path}")
                 
-                # Escribir datos
-                for registro in datos_norma_finales:
-                    # Asegurar que todos los campos tengan al menos un valor vacío válido
-                    registro_seguro = {}
-                    for campo in campos_orden:
-                        valor = registro.get(campo, '')
-                        # Si el campo está vacío o es None, asignar valor por defecto
-                        if not valor or str(valor).strip() == '':
-                            if campo == 'CANTIDAD':
-                                registro_seguro[campo] = '1'
-                            elif campo in ['FECHA_INSTALACION']:
-                                registro_seguro[campo] = '01/01/2000'
-                            else:
-                                registro_seguro[campo] = ''
-                        else:
-                            registro_seguro[campo] = valor
+                # Leer todas las hojas
+                df_dict = pd.read_excel(archivo_path, sheet_name=None)
+                
+                # Buscar la hoja de estructuras
+                nombre_hoja_estructuras = None
+                if 'Estructuras_N1-N2-N3' in df_dict:
+                    nombre_hoja_estructuras = 'Estructuras_N1-N2-N3'
+                else:
+                    # Buscar hojas que contengan "Estructura" en el nombre
+                    for hoja in df_dict.keys():
+                        if 'estructura' in str(hoja).lower():
+                            nombre_hoja_estructuras = hoja
+                            break
+                
+                if nombre_hoja_estructuras:
+                    print(f"[TXT Norma] Hoja de estructuras encontrada: '{nombre_hoja_estructuras}'")
                     
-                    valores = []
-                    for campo in campos_orden:
-                        valor = registro_seguro.get(campo, '')
-                        # IMPORTANTE: Limpiar el valor antes de agregarlo
-                        valor_limpio = self._limpiar_valor_para_txt(valor)
-                        valores.append(valor_limpio)
+                    # Leer la hoja de estructuras SIN PROCESAR ENCABEZADOS primero para detectar formato
+                    df_test = pd.read_excel(archivo_path, sheet_name=nombre_hoja_estructuras, nrows=2)
+                    tiene_encabezados = not all('Unnamed:' in str(col) for col in df_test.columns)
+                    
+                    if not tiene_encabezados:
+                        print(f"[TXT Norma] ⚠️ Excel sin encabezados detectado. Leyendo con header=None")
+                        # Leer sin encabezados
+                        df_estructuras = pd.read_excel(archivo_path, sheet_name=nombre_hoja_estructuras, header=None)
+                    else:
+                        # Leer con encabezados normales
+                        df_estructuras = pd.read_excel(archivo_path, sheet_name=nombre_hoja_estructuras)
+                        df_estructuras.columns = [str(col).strip() for col in df_estructuras.columns]
+                    
+                    print(f"[TXT Norma] Total filas en estructuras: {len(df_estructuras)}")
+                    
+                    # Iterar todas las filas y buscar código operativo Z##### en CUALQUIER celda
+                    for idx, row in df_estructuras.iterrows():
+                        enlace = None
+                        codigo_op = None
+                        
+                        # Buscar en todas las celdas de la fila
+                        for col_idx, val in enumerate(row):
+                            if pd.isna(val):
+                                continue
+                            
+                            try:
+                                val_str = str(val).strip().upper()
+                            except Exception:
+                                continue
+                            
+                            if not val_str:
+                                continue
+                            
+                            # Buscar código operativo Z##### (mínimo 5 dígitos)
+                            if not codigo_op:
+                                m = re.search(r"Z\s*-?\s*(\d{5,})", val_str)
+                                if m:
+                                    codigo_op = f"Z{m.group(1)}"
+                            
+                            # Buscar ENLACE (formato PXX, PXXX, etc.)
+                            if not enlace:
+                                # Patrón: P seguido de dígitos, puede estar al inicio o con espacios
+                                m_enlace = re.match(r"^P\d+$", val_str)
+                                if m_enlace:
+                                    enlace = val_str
+                        
+                        # Si encontramos ambos en la misma fila, mapear
+                        if enlace and codigo_op:
+                            enlace_a_codigo_op[enlace] = codigo_op
+                            print(f"[TXT Norma] ✓ Detectado BAJA: ENLACE={enlace} -> codigo_op={codigo_op}")
+                
+                else:
+                    print("[TXT Norma] ADVERTENCIA: No se encontró hoja de estructuras. No se detectarán bajas.")
+            
+            except Exception as e:
+                print(f"[TXT Norma] ERROR al detectar bajas: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            print(f"[TXT Norma] Total bajas detectadas: {len(enlace_a_codigo_op)}")
+
+            # 3) Escribir archivo con merge BD para bajas
+            campos_orden = ['ENLACE', 'NORMA', 'GRUPO', 'CIRCUITO', 'CODIGO_TRAFO', 'MACRONORMA', 'CANTIDAD', 'TIPO_ADECUACION']
+
+            with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
+                f.write('|'.join(campos_orden) + '\n')
+
+                for reg in registros_norma:
+                    # Base: datos del Excel
+                    reg_out = {c: str(reg.get(c, '') or '').strip() for c in campos_orden}
+                    
+                    # Si es BAJA (tiene código operativo): enriquecer desde BD
+                    enlace_upper = reg_out.get('ENLACE', '').strip().upper()
+                    codigo_op = enlace_a_codigo_op.get(enlace_upper)
+                    
+                    if codigo_op:
+                        try:
+                            # Resolver FID
+                            fid_real = OracleHelper.obtener_fid_desde_codigo_operativo(codigo_op)
+                            if fid_real:
+                                # Consultar BD
+                                datos_bd = OracleHelper.obtener_norma_por_fid(fid_real) or {}
+                                # Merge campo a campo: BD tiene prioridad si no vacío
+                                for campo in ['NORMA', 'GRUPO', 'CIRCUITO', 'CODIGO_TRAFO', 'MACRONORMA', 'CANTIDAD', 'TIPO_ADECUACION']:
+                                    val_bd = str(datos_bd.get(campo, '') or '').strip()
+                                    if val_bd:
+                                        reg_out[campo] = val_bd
+                                print(f"[TXT Norma] BAJA ENLACE={reg_out['ENLACE']}: merge BD aplicado: {datos_bd}")
+                            else:
+                                print(f"[TXT Norma] BAJA ENLACE={enlace_upper}: no se resolvió FID para {codigo_op}")
+                        except Exception as e:
+                            print(f"[TXT Norma] ERROR enriqueciendo BAJA {enlace_upper}: {e}")
+                    
+                    # Valores por defecto
+                    if not reg_out.get('CANTIDAD'):
+                        reg_out['CANTIDAD'] = '1'
+                    else:
+                        # Normalizar cantidad (10.0 -> 10)
+                        try:
+                            val = reg_out['CANTIDAD']
+                            if '.' in val and val.replace('.', '').isdigit():
+                                reg_out['CANTIDAD'] = val.split('.')[0]
+                        except Exception:
+                            pass
+                    
+                    if not reg_out.get('MACRONORMA'):
+                        reg_out['MACRONORMA'] = ''
+
+                    # Escribir línea
+                    valores = [self._limpiar_valor_para_txt(reg_out.get(c, '')) for c in campos_orden]
                     f.write('|'.join(valores) + '\n')
-            
-            # Validar el archivo generado
+
+            # Validación básica
             self._validar_archivo_norma_txt(filepath)
-            
             return filename
-            
         except Exception as e:
             raise Exception(f"Error generando archivo TXT de norma: {str(e)}")
     
@@ -3106,10 +3458,43 @@ class ClasificadorEstructuras:
         if not tipo_proyecto:
             return tipo_proyecto
         
-        tipo_limpio = tipo_proyecto.strip().upper()
+        # Normalizar y extraer únicamente la parte romana por si vienen caracteres como '|II|'
+        tipo_limpio = str(tipo_proyecto).strip().upper()
+        try:
+            import re as _re
+            coincidencias = _re.findall(r"[IVXLCDM]+", tipo_limpio)
+            romano_extraido = max(coincidencias, key=len) if coincidencias else tipo_limpio
+        except Exception:
+            romano_extraido = tipo_limpio
+
         conversion_map = REGLAS_CLASIFICACION['CONVERSION_TIPO_PROYECTO']
-        
-        return conversion_map.get(tipo_limpio, tipo_proyecto)  # Si no coincide, mantener valor original
+        if romano_extraido in conversion_map:
+            return conversion_map[romano_extraido]
+
+        # Fallback: convertir romano a entero genérico si no está en el mapa y formar T<n>
+        try:
+            valor = self._roman_to_int(romano_extraido)
+            if valor > 0:
+                return f"T{valor}"
+        except Exception:
+            pass
+
+        # Si no se pudo convertir, mantener el valor original
+        return tipo_proyecto
+
+    def _roman_to_int(self, s: str) -> int:
+        valores = { 'I':1, 'V':5, 'X':10, 'L':50, 'C':100, 'D':500, 'M':1000 }
+        total = 0
+        prev = 0
+        s = (s or '').strip().upper()
+        for ch in reversed(s):
+            v = valores.get(ch, 0)
+            if v < prev:
+                total -= v
+            else:
+                total += v
+                prev = v
+        return total
     
     def _generar_tipo_proyecto_desde_nivel_tension(self, nivel_tension: str) -> str:
         """

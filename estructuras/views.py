@@ -490,6 +490,8 @@ def descargar_archivo(request, proceso_id, tipo_archivo):
     nombres_descarga = {
         'txt': 'estructuras_txt_nuevo.txt',
         'xml': 'estructuras_xml_nuevo.xml',
+        'norma_txt': 'estructuras_txt_norma.txt',
+        'norma_xml': 'estructuras_xml_norma.xml',
         'txt_baja': 'estructuras_txt_baja.txt',
         'xml_baja': 'estructuras_xml_baja.xml',
     }
@@ -536,6 +538,48 @@ def descargar_archivo(request, proceso_id, tipo_archivo):
         except Exception as e:
             print(f"Error generando TXT baja: {str(e)}")
             raise Http404("Error al generar archivo TXT_BAJA")
+
+    # Manejo especial para norma_txt
+    if tipo_archivo == 'norma_txt':
+        if 'norma_txt' in proceso.archivos_generados:
+            filename = proceso.archivos_generados['norma_txt']
+            filepath = os.path.join(settings.MEDIA_ROOT, 'generated', filename)
+            if os.path.exists(filepath):
+                return FileResponse(open(filepath, 'rb'), as_attachment=True, filename=nombres_descarga.get('norma_txt', filename))
+        try:
+            from .services import FileGenerator
+            generator = FileGenerator(proceso)
+            filename_generated = generator.generar_norma_txt()
+            generated_filepath = os.path.join(settings.MEDIA_ROOT, 'generated', filename_generated)
+            if not proceso.archivos_generados:
+                proceso.archivos_generados = {}
+            proceso.archivos_generados['norma_txt'] = filename_generated
+            proceso.save()
+            return FileResponse(open(generated_filepath, 'rb'), as_attachment=True, filename=nombres_descarga.get('norma_txt', filename_generated))
+        except Exception as e:
+            print(f"Error generando norma TXT: {str(e)}")
+            raise Http404("Error al generar archivo NORMA_TXT")
+
+    # Manejo especial para norma_xml
+    if tipo_archivo == 'norma_xml':
+        if 'norma_xml' in proceso.archivos_generados:
+            filename = proceso.archivos_generados['norma_xml']
+            filepath = os.path.join(settings.MEDIA_ROOT, 'generated', filename)
+            if os.path.exists(filepath):
+                return FileResponse(open(filepath, 'rb'), as_attachment=True, filename=nombres_descarga.get('norma_xml', filename))
+        try:
+            from .services import FileGenerator
+            generator = FileGenerator(proceso)
+            filename_generated = generator.generar_norma_xml()
+            generated_filepath = os.path.join(settings.MEDIA_ROOT, 'generated', filename_generated)
+            if not proceso.archivos_generados:
+                proceso.archivos_generados = {}
+            proceso.archivos_generados['norma_xml'] = filename_generated
+            proceso.save()
+            return FileResponse(open(generated_filepath, 'rb'), as_attachment=True, filename=nombres_descarga.get('norma_xml', filename_generated))
+        except Exception as e:
+            print(f"Error generando norma XML: {str(e)}")
+            raise Http404("Error al generar archivo NORMA_XML")
     
     # Manejo normal para otros tipos de archivo
     filename = proceso.archivos_generados.get(tipo_archivo)
