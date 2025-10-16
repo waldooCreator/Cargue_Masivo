@@ -477,13 +477,13 @@ def estadisticas_clasificacion(request, proceso_id):
 
 @require_http_methods(["GET"])
 def descargar_archivo(request, proceso_id, tipo_archivo):
-    """Descarga archivo generado (txt, xml, norma_txt o norma_xml)"""
+    """Descarga archivo generado (txt, xml, norma_txt, norma_xml, txt_baja, xml_baja, txt_linea, xml_linea)"""
     proceso = get_object_or_404(ProcesoEstructura, id=proceso_id)
     
     if not proceso.archivos_generados:
         raise Http404("No hay archivos generados para este proceso")
 
-    if tipo_archivo not in ['txt', 'xml', 'norma_txt', 'norma_xml', 'txt_baja', 'xml_baja']:
+    if tipo_archivo not in ['txt', 'xml', 'norma_txt', 'norma_xml', 'txt_baja', 'xml_baja', 'txt_linea', 'xml_linea']:
         raise Http404("Tipo de archivo no válido")
 
     # Definir nombres de descarga fijos y descriptivos sin cambiar los nombres físicos
@@ -494,6 +494,8 @@ def descargar_archivo(request, proceso_id, tipo_archivo):
         'norma_xml': 'estructuras_xml_norma.xml',
         'txt_baja': 'estructuras_txt_baja.txt',
         'xml_baja': 'estructuras_xml_baja.xml',
+        'txt_linea': 'conductores_txt_linea.txt',
+        'xml_linea': 'conductores_xml_linea.xml',
     }
     
     # Manejo especial para txt_baja
@@ -580,6 +582,16 @@ def descargar_archivo(request, proceso_id, tipo_archivo):
         except Exception as e:
             print(f"Error generando norma XML: {str(e)}")
             raise Http404("Error al generar archivo NORMA_XML")
+    
+    # Manejo especial para txt_linea (CONDUCTORES)
+    if tipo_archivo == 'txt_linea':
+        # Por ahora retornamos un archivo placeholder hasta implementar la lógica real
+        raise Http404("TXT Línea: Funcionalidad en desarrollo")
+    
+    # Manejo especial para xml_linea (CONDUCTORES)
+    if tipo_archivo == 'xml_linea':
+        # Por ahora retornamos un archivo placeholder hasta implementar la lógica real
+        raise Http404("XML Línea: Funcionalidad en desarrollo")
     
     # Manejo normal para otros tipos de archivo
     filename = proceso.archivos_generados.get(tipo_archivo)

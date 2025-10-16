@@ -337,71 +337,6 @@ class OracleHelper:
             return ''
 
     @classmethod
-    def obtener_fid_desde_enlace(cls, enlace: str) -> str:
-        """
-        Obtiene el FID (g3e_fid) desde el ENLACE consultando la base de datos Oracle.
-        
-        Args:
-            enlace: Identificador/ENLACE del registro (ej: P113, P240, etc.)
-            
-        Returns:
-            str: FID (g3e_fid) o '' si no se encuentra
-        """
-        # Verificar si Oracle está habilitado en settings
-        if hasattr(settings, 'ORACLE_ENABLED') and not settings.ORACLE_ENABLED:
-            print(f"DEBUG Oracle: Consultas Oracle deshabilitadas para ENLACE {enlace}")
-            return ''
-            
-        if not enlace:
-            return ''
-            
-        # Limpiar el enlace
-        enlace_limpio = str(enlace).strip().upper()
-        if not enlace_limpio or enlace_limpio.lower() in ('nan', 'none', ''):
-            return ''
-            
-        print(f"🔍 Buscando FID para ENLACE: {enlace_limpio}")
-        
-        try:
-            oracle_config = cls.get_oracle_config()
-            with oracledb.connect(**oracle_config) as connection:
-                with connection.cursor() as cursor:
-                    # Configurar timeout
-                    try:
-                        cursor.callTimeout = 5000
-                    except AttributeError:
-                        pass
-                    
-                    # Query para obtener FID desde ENLACE
-                    query = """
-                    SELECT g3e_fid
-                    FROM ccomun
-                    WHERE UPPER(enlace) = :enlace_param
-                    """
-                    
-                    cursor.execute(query, {"enlace_param": enlace_limpio})
-                    result = cursor.fetchone()
-                    
-                    if result:
-                        fid_real = result[0]
-                        fid_str = str(fid_real) if fid_real is not None else ''
-                        print(f"✅ Oracle: ENLACE {enlace_limpio} -> FID {fid_str}")
-                        return fid_str
-                    else:
-                        print(f"⚠️ Oracle: No se encontró FID para ENLACE {enlace_limpio}")
-                        return ''
-                        
-        except Exception as e:
-            error_msg = str(e)
-            if "timed out" in error_msg.lower():
-                print(f"⏱️ Oracle TIMEOUT para ENLACE {enlace_limpio}: Conexión expiró.")
-            elif "connection" in error_msg.lower():
-                print(f"🔌 Oracle CONEXIÓN para ENLACE {enlace_limpio}: No se pudo conectar.")
-            else:
-                print(f"❌ Oracle ERROR para ENLACE {enlace_limpio}: {error_msg}")
-            return ''
-
-    @classmethod
     def obtener_datos_completos_por_fid(cls, fid_real: str) -> Dict[str, str]:
         """
         Obtiene datos completos (coordenadas, TIPO, PROPIETARIO, etc.) desde Oracle usando FID real
@@ -1391,64 +1326,6 @@ class FileGenerator:
         os.makedirs(self.base_path, exist_ok=True)
         self.clasificador = ClasificadorEstructuras()
 
-    def _generar_nombre_archivo_con_indice(self, tipo_archivo: str, extension: str) -> str:
-        """
-        Genera un nombre de archivo único con índice incremental.
-        
-        Formato: {tipo}_{timestamp}_{contador}.{extension}
-        Ejemplos: 
-            - estructuras_nuevo_20251014_001.txt
-            - estructuras_baja_20251014_001.txt
-            - norma_nuevo_20251014_001.xml
-        
-        Args:
-            tipo_archivo: Tipo de archivo ('estructuras_nuevo', 'estructuras_baja', 'norma_nuevo', 'norma_baja')
-            extension: Extensión del archivo ('txt' o 'xml')
-            
-        Returns:
-            Nombre de archivo único con índice incremental
-        """
-        from datetime import datetime
-        import glob
-        
-        # Timestamp actual: solo fecha YYYYMMDD
-        timestamp = datetime.now().strftime("%Y%m%d")
-        
-        # Buscar archivos existentes con el mismo patrón para determinar el siguiente índice
-        # Patrón: tipo_timestamp_*.extension
-        patron = os.path.join(self.base_path, f"{tipo_archivo}_{timestamp}_*.{extension}")
-        archivos_existentes = glob.glob(patron)
-        
-        # Extraer índices de archivos existentes
-        indices_existentes = []
-        for archivo in archivos_existentes:
-            try:
-                # Extraer el número de índice del nombre del archivo
-                basename = os.path.basename(archivo)
-                # Formato: tipo_timestamp_XXX.extension
-                partes = basename.replace(f'.{extension}', '').split('_')
-                if len(partes) >= 3:
-                    indice = int(partes[-1])
-                    indices_existentes.append(indice)
-            except (ValueError, IndexError):
-                continue
-        
-        # Determinar el siguiente índice
-        if indices_existentes:
-            siguiente_indice = max(indices_existentes) + 1
-        else:
-            siguiente_indice = 1
-        
-        # Formatear índice con 3 dígitos (001, 002, etc.)
-        indice_formateado = f"{siguiente_indice:03d}"
-        
-        # Construir nombre de archivo final
-        nombre_archivo = f"{tipo_archivo}_{timestamp}_{indice_formateado}.{extension}"
-        
-        print(f"📁 Generando archivo: {nombre_archivo}")
-        
-        return nombre_archivo
-
     def _limpiar_fid(self, valor) -> str:
         """
         Limpia y normaliza un valor FID eliminando decimales innecesarios (.0)
@@ -1909,7 +1786,7 @@ class FileGenerator:
     def generar_txt(self):
         """Genera archivo TXT con los datos transformados (estructura completa) - SOLO REGISTROS SIN FID_rep"""
         try:
-            filename = self._generar_nombre_archivo_con_indice('estructuras_nuevo', 'txt')
+            filename = f"estructuras_{self.proceso.id}.txt"
             filepath = os.path.join(self.base_path, filename)
             
             # Obtener datos completos con campos aplicados
@@ -2277,38 +2154,25 @@ class FileGenerator:
                     pass
                 raise Exception("VALIDATION_ERRORS")
             
-            # Encabezados TXT NUEVO: MISMO ORDEN QUE XML NUEVO
-            # ORDEN POR TABLA (Componente): CCOMUN → EPOSTE_AT → CPROPIETARIO
-            # Nota: COORDENADA_X y COORDENADA_Y solo en TXT (no en XML)
-            # G3E_GEOMETRY solo en XML (no en TXT)
+            # Encabezados TXT NUEVO: insertar FID_ANTERIOR entre SALINIDAD y ENLACE (solo se llena para reposiciones)
             encabezados_base = [
-                'COORDENADA_X', 'COORDENADA_Y',
-                # CCOMUN (17 campos)
-                'UBICACION', 'ESTADO', 'CODIGO_MATERIAL', 'FECHA_INSTALACION', 
-                'FECHA_OPERACION', 'PROYECTO', 'EMPRESA', 'OBSERVACIONES',
-                'CLASIFICACION_MERCADO', 'TIPO_PROYECTO', 'ID_MERCADO', 'UC',
-                'ESTADO_SALUD', 'OT_MAXIMO', 'CODIGO_MARCACION', 'SALINIDAD',
-                'FID_ANTERIOR',
-                # EPOSTE_AT (5 campos)
-                'GRUPO', 'TIPO', 'CLASE', 'USO', 'TIPO_ADECUACION',
-                # CPROPIETARIO (2 campos)
-                'PROPIETARIO', 'PORCENTAJE_PROPIEDAD'
+                'COORDENADA_X', 'COORDENADA_Y', 'GRUPO', 'TIPO', 'CLASE', 'USO', 'ESTADO', 
+                'TIPO_ADECUACION', 'PROPIETARIO', 'PORCENTAJE_PROPIEDAD', 'UBICACION',
+                'CODIGO_MATERIAL', 'FECHA_INSTALACION', 'FECHA_OPERACION', 'PROYECTO',
+                'EMPRESA', 'OBSERVACIONES', 'CLASIFICACION_MERCADO', 'TIPO_PROYECTO',
+                'ID_MERCADO', 'UC', 'ESTADO_SALUD', 'OT_MAXIMO', 'CODIGO_MARCACION',
+                'SALINIDAD', 'FID_ANTERIOR', 'ENLACE'
             ]
             encabezados = encabezados_base
             
-            # Mapeo de campos internos a encabezados (mismo orden)
+            # Mapeo de campos internos a encabezados (incluye FID_ANTERIOR)
             campos_orden = [
-                'COORDENADA_X', 'COORDENADA_Y',
-                # CCOMUN (17 campos)
-                'UBICACION', 'ESTADO', 'CODIGO_MATERIAL', 'FECHA_INSTALACION', 
-                'FECHA_OPERACION', 'PROYECTO', 'EMPRESA', 'OBSERVACIONES',
-                'CLASIFICACION_MERCADO', 'TIPO_PROYECTO', 'ID_MERCADO', 'UC',
-                'ESTADO_SALUD', 'OT_MAXIMO', 'CODIGO_MARCACION', 'SALINIDAD',
-                'FID_ANTERIOR',
-                # EPOSTE_AT (5 campos)
-                'GRUPO', 'TIPO', 'CLASE', 'USO', 'TIPO_ADECUACION',
-                # CPROPIETARIO (2 campos)
-                'PROPIETARIO', 'PORCENTAJE_PROPIEDAD'
+                'COORDENADA_X', 'COORDENADA_Y', 'GRUPO', 'TIPO', 'CLASE', 'USO', 'ESTADO', 
+                'TIPO_ADECUACION', 'PROPIETARIO', 'PORCENTAJE_PROPIEDAD', 'UBICACION',
+                'CODIGO_MATERIAL', 'FECHA_INSTALACION', 'FECHA_OPERACION', 'PROYECTO',
+                'EMPRESA', 'OBSERVACIONES', 'CLASIFICACION_MERCADO', 'TIPO_PROYECTO',
+                'ID_MERCADO', 'UC', 'ESTADO_SALUD', 'OT_MAXIMO', 'CODIGO_MARCACION',
+                'SALINIDAD', 'FID_ANTERIOR', 'ENLACE'
             ]
 
             with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
@@ -2413,7 +2277,7 @@ class FileGenerator:
         siguiendo exactamente el mismo flujo que generar_txt()
         """
         try:
-            filename = self._generar_nombre_archivo_con_indice('estructuras_baja', 'txt')
+            filename = f"estructuras_{self.proceso.id}_baja.txt"
             filepath = os.path.join(self.base_path, filename)
             
             # 1. FILTRAR PRIMERO los datos_excel por Código FID_rep
@@ -2449,25 +2313,6 @@ class FileGenerator:
                 if idx >= len(datos_excel_originales):
                     continue
                 registro_excel = datos_excel_originales[idx].copy()
-                
-                # IMPORTANTE: Guardar el índice original para la lógica de FECHA_FUERA_OPERACION
-                registro_excel['__indice_original__'] = idx
-                
-                # Extraer y guardar la Fecha Instalación del Excel para usar en FECHA_FUERA_OPERACION
-                fecha_instalacion_excel = self._extraer_fecha_instalacion_desde_registro(registro_excel)
-                if fecha_instalacion_excel:
-                    registro_excel['__fecha_instalacion_excel__'] = fecha_instalacion_excel
-                
-                # Extraer y guardar el Identificador del Excel para determinar DESMANTELADO vs REPOSICIÓN
-                identificador = None
-                for key in registro_excel.keys():
-                    if isinstance(key, str) and key.strip().lower() == 'identificador':
-                        identificador = registro_excel.get(key, '')
-                        break
-                
-                # Guardar el Identificador en ENLACE (se usará en _es_reposicion)
-                if identificador is not None:
-                    registro_excel['ENLACE'] = identificador
 
                 # Si existen datos_norma, sobreescribir campos procesados equivalentes
                 if datos_norma_originales and idx < len(datos_norma_originales):
@@ -2557,34 +2402,6 @@ class FileGenerator:
                         ]
                         for i, registro_tr in enumerate(datos_transformados_filtrados):
                             registro_comb = registro_tr.copy()
-                            
-                            # IMPORTANTE: Guardar el índice original para la lógica de FECHA_FUERA_OPERACION
-                            registro_comb['__indice_original__'] = i
-                            
-                            # IMPORTANTE: Extraer y guardar campos del Excel raw para determinar DESMANTELADO vs REPOSICIÓN
-                            try:
-                                raw_original = raw_filtrados[i] if i < len(raw_filtrados) else None
-                                if raw_original and isinstance(raw_original, dict):
-                                    # Extraer Fecha Instalación
-                                    fecha_instalacion_excel = self._extraer_fecha_instalacion_desde_registro(raw_original)
-                                    if fecha_instalacion_excel:
-                                        registro_comb['__fecha_instalacion_excel__'] = fecha_instalacion_excel
-                                    
-                                    # Extraer Identificador (para determinar si es DESMANTELADO o REPOSICIÓN)
-                                    # Buscar el campo "Identificador" con variantes de nombres
-                                    identificador = None
-                                    for key in raw_original.keys():
-                                        if isinstance(key, str) and key.strip().lower() == 'identificador':
-                                            identificador = raw_original.get(key, '')
-                                            break
-                                    
-                                    # Guardar el Identificador en el registro (se usará en _es_reposicion)
-                                    if identificador is not None:
-                                        registro_comb['ENLACE'] = identificador
-                                    
-                            except Exception as e:
-                                print(f"⚠️ Error extrayendo datos del Excel raw en registro {i}: {e}")
-                            
                             if i < len(datos_norma_filtrados):
                                 reg_norm = datos_norma_filtrados[i]
                                 for campo in campos_procesados:
@@ -2685,12 +2502,12 @@ class FileGenerator:
             # 5. REGLA ESPECIAL PARA FID_ANTERIOR (IGUAL que generar_txt)
             incluir_fid_anterior = self._debe_incluir_fid_anterior(datos_finales)
             
-            # 6. Nombres definitivos de encabezados - G3E_FID, ESTADO y FECHA_FUERA_OPERACION
-            encabezados_base = ['G3E_FID', 'ESTADO', 'FECHA_FUERA_OPERACION']
+            # 6. Nombres definitivos de encabezados - G3E_FID y ESTADO (valor fijo 'RETIRADO')
+            encabezados_base = ['G3E_FID', 'ESTADO']
             encabezados = encabezados_base
 
-            # 7. Mapeo de campos internos a encabezados - G3E_FID, ESTADO y FECHA_FUERA_OPERACION
-            campos_orden = ['G3E_FID', 'ESTADO', 'FECHA_FUERA_OPERACION']
+            # 7. Mapeo de campos internos a encabezados - G3E_FID y ESTADO
+            campos_orden = ['G3E_FID', 'ESTADO']
 
             # 8. Escribir archivo (IGUAL que generar_txt)
             # DEBUG: inspeccionar datos antes de escribir
@@ -2708,44 +2525,9 @@ class FileGenerator:
                 f.write('|'.join(encabezados) + '\n')
                 
                 # Escribir datos separados por |
-                for i, registro in enumerate(datos_finales):
+                for registro in datos_finales:
                     # Asignar ESTADO fijo para BAJA
                     registro['ESTADO'] = 'RETIRADO'
-                    
-                    # Determinar FECHA_FUERA_OPERACION según reglas de negocio
-                    # Regla 1: DESMANTELADO (tiene FID pero NO tiene datos de estructura nueva) -> Fecha de hoy
-                    # Regla 2: REPOSICIÓN (tiene FID Y tiene datos de estructura nueva) -> Fecha Instalación del Excel
-                    
-                    # Obtener índice original del registro (si existe)
-                    indice_original = registro.get('__indice_original__', i)
-                    
-                    # DEBUG: Verificar campos internos
-                    print(f"🔍 DEBUG BAJA registro {i}: __indice_original__={indice_original}, __fecha_instalacion_excel__={registro.get('__fecha_instalacion_excel__', 'NO EXISTE')}")
-                    
-                    es_reposicion = self._es_reposicion(registro, indice_original)
-                    print(f"🔍 DEBUG BAJA registro {i}: es_reposicion={es_reposicion}")
-                    
-                    if es_reposicion:
-                        # REPOSICIÓN: usar Fecha Instalación del Excel (guardada previamente)
-                        fecha_instalacion = registro.get('__fecha_instalacion_excel__', '')
-                        if not fecha_instalacion:
-                            # Si no se guardó, intentar extraer ahora
-                            fecha_instalacion = self._extraer_fecha_instalacion_desde_registro(registro)
-                        registro['FECHA_FUERA_OPERACION'] = fecha_instalacion if fecha_instalacion else ''
-                        print(f"✅ REPOSICIÓN: FID {registro.get('G3E_FID')} -> FECHA_FUERA_OPERACION={registro['FECHA_FUERA_OPERACION']}")
-                    else:
-                        # DESMANTELADO: usar fecha de hoy
-                        from datetime import datetime
-                        fecha_hoy = datetime.now().strftime('%d/%m/%Y')
-                        registro['FECHA_FUERA_OPERACION'] = fecha_hoy
-                        print(f"✅ DESMANTELADO: FID {registro.get('G3E_FID')} -> FECHA_FUERA_OPERACION={fecha_hoy}")
-                    
-                    # Limpiar campos internos antes de validar
-                    if '__indice_original__' in registro:
-                        del registro['__indice_original__']
-                    if '__fecha_instalacion_excel__' in registro:
-                        del registro['__fecha_instalacion_excel__']
-                    
                     # Validar y corregir campos críticos (IGUAL que generar_txt)
                     registro_validado = self._validar_campos_criticos(registro.copy())
                     
@@ -2817,177 +2599,6 @@ class FileGenerator:
         except Exception:
             return False
 
-    def _es_reposicion(self, registro: Dict, indice: int) -> bool:
-        """
-        Determina si un registro es una REPOSICIÓN o un DESMANTELADO.
-        
-        CRITERIO:
-        - DESMANTELADO: Tiene "Código FID_rep" poblado Y tiene "Identificador" vacío
-        - REPOSICIÓN: Tiene "Código FID_rep" poblado Y tiene "Identificador" poblado
-        
-        Args:
-            registro: Registro actual procesado
-            indice: Índice del registro en datos_finales
-            
-        Returns:
-            True si es REPOSICIÓN, False si es DESMANTELADO
-        """
-        try:
-            # Buscar el campo "Identificador" en el registro (puede venir del Excel con diferentes nombres)
-            identificador = None
-            for key in registro.keys():
-                if isinstance(key, str) and key.strip().lower() in ['identificador', 'enlace']:
-                    identificador = registro.get(key, '')
-                    break
-            
-            # Si no encontramos el campo con los nombres esperados, buscar en los campos mapeados
-            if identificador is None:
-                identificador = registro.get('ENLACE', '')  # Campo mapeado en el sistema
-            
-            # Verificar si el identificador está vacío
-            tiene_identificador = False
-            if identificador and str(identificador).strip() and str(identificador).strip().lower() not in ('', 'nan', 'none', 'null'):
-                tiene_identificador = True
-            
-            # DESMANTELADO: NO tiene identificador
-            # REPOSICIÓN: SÍ tiene identificador
-            es_reposicion = tiene_identificador
-            
-            print(f"🔍 _es_reposicion(indice={indice}): Identificador='{identificador}' -> {'REPOSICIÓN' if es_reposicion else 'DESMANTELADO'}")
-            
-            return es_reposicion
-            
-        except Exception as e:
-            print(f"⚠️ Error determinando si es reposición en registro {indice}: {e}")
-            # Por defecto, asumir que es DESMANTELADO (fecha de hoy)
-            return False
-    
-    def _extraer_fecha_instalacion_desde_registro(self, registro: Dict) -> str:
-        """
-        Extrae la fecha de instalación directamente de un registro de Excel.
-        Busca el campo "Fecha Instalacion DD/MM/YYYY" o variantes.
-        
-        Args:
-            registro: Registro del Excel
-            
-        Returns:
-            Fecha en formato DD/MM/YYYY o cadena vacía si no se encuentra
-        """
-        try:
-            # Buscar el campo de fecha de instalación (posibles variantes)
-            posibles_nombres = [
-                'Fecha Instalacion DD/MM/YYYY',
-                'Fecha Instalacion',
-                'FECHA_INSTALACION',
-                'Fecha Instalación',
-                'fecha instalacion',
-                'fecha_instalacion'
-            ]
-            
-            for nombre in posibles_nombres:
-                if nombre in registro:
-                    fecha_valor = registro[nombre]
-                    if fecha_valor and str(fecha_valor).strip() and str(fecha_valor).strip().lower() not in ('', 'nan', 'none', 'null'):
-                        fecha_str = str(fecha_valor).strip()
-                        # Validar que tenga formato de fecha básico
-                        if '/' in fecha_str or '-' in fecha_str:
-                            return self._normalizar_fecha(fecha_str)
-            
-            return ''
-            
-        except Exception as e:
-            print(f"⚠️ Error extrayendo fecha de instalación desde registro: {e}")
-            return ''
-    
-    def _extraer_fecha_instalacion_excel(self, indice: int) -> str:
-        """
-        Extrae la fecha de instalación del Excel original para el índice dado.
-        Busca el campo "Fecha Instalacion DD/MM/YYYY" o variantes.
-        
-        Args:
-            indice: Índice del registro en los datos originales
-            
-        Returns:
-            Fecha en formato DD/MM/YYYY o cadena vacía si no se encuentra
-        """
-        try:
-            # Intentar obtener del proceso.datos_excel original
-            if not hasattr(self.proceso, 'datos_excel') or not self.proceso.datos_excel:
-                return ''
-            
-            if indice >= len(self.proceso.datos_excel):
-                return ''
-            
-            registro_excel = self.proceso.datos_excel[indice]
-            
-            # Buscar el campo de fecha de instalación (posibles variantes)
-            posibles_nombres = [
-                'Fecha Instalacion DD/MM/YYYY',
-                'Fecha Instalacion',
-                'FECHA_INSTALACION',
-                'Fecha Instalación',
-                'fecha instalacion',
-                'fecha_instalacion'
-            ]
-            
-            for nombre in posibles_nombres:
-                if nombre in registro_excel:
-                    fecha_valor = registro_excel[nombre]
-                    if fecha_valor and str(fecha_valor).strip() and str(fecha_valor).strip().lower() not in ('', 'nan', 'none', 'null'):
-                        fecha_str = str(fecha_valor).strip()
-                        # Validar que tenga formato de fecha básico
-                        if '/' in fecha_str or '-' in fecha_str:
-                            # Intentar normalizar a formato DD/MM/YYYY si viene en otro formato
-                            return self._normalizar_fecha(fecha_str)
-            
-            # Si no se encontró en datos_excel, buscar en el registro procesado
-            if 'FECHA_INSTALACION' in registro_excel:
-                fecha_valor = registro_excel.get('FECHA_INSTALACION', '')
-                if fecha_valor and str(fecha_valor).strip():
-                    return self._normalizar_fecha(str(fecha_valor).strip())
-            
-            return ''
-            
-        except Exception as e:
-            print(f"⚠️ Error extrayendo fecha de instalación para índice {indice}: {e}")
-            return ''
-    
-    def _normalizar_fecha(self, fecha_str: str) -> str:
-        """
-        Normaliza una fecha a formato DD/MM/YYYY.
-        
-        Args:
-            fecha_str: Fecha en formato string (puede ser DD/MM/YYYY, YYYY-MM-DD, etc.)
-            
-        Returns:
-            Fecha en formato DD/MM/YYYY
-        """
-        try:
-            from datetime import datetime
-            
-            # Intentar parsear diferentes formatos comunes
-            formatos = [
-                '%d/%m/%Y',     # DD/MM/YYYY
-                '%Y-%m-%d',     # YYYY-MM-DD
-                '%d-%m-%Y',     # DD-MM-YYYY
-                '%Y/%m/%d',     # YYYY/MM/DD
-                '%d/%m/%y',     # DD/MM/YY
-                '%d-%m-%y',     # DD-MM-YY
-            ]
-            
-            for formato in formatos:
-                try:
-                    fecha_obj = datetime.strptime(fecha_str, formato)
-                    return fecha_obj.strftime('%d/%m/%Y')
-                except ValueError:
-                    continue
-            
-            # Si no se pudo parsear, devolver la cadena original
-            return fecha_str
-            
-        except Exception:
-            return fecha_str
-
     def generar_xml_baja(self):
         """
         Genera archivo XML de configuración para BAJA, alineado con el TXT BAJA.
@@ -3001,7 +2612,7 @@ class FileGenerator:
             from xml.etree.ElementTree import Element, SubElement, tostring
             from xml.dom import minidom
             
-            filename = self._generar_nombre_archivo_con_indice('estructuras_baja', 'xml')
+            filename = f"estructuras_{self.proceso.id}_baja.xml"
             filepath = os.path.join(self.base_path, filename)
             
             # 1. FILTRAR PRIMERO los datos_excel por Código FID_rep (para contar)
@@ -3026,11 +2637,10 @@ class FileGenerator:
             # Contenedor de campos
             campos = SubElement(root, 'Campos')
             
-            # 3. Definición de campos para BAJA (sin coordenadas) + ESTADO fijo + FECHA_FUERA_OPERACION
+            # 3. Definición de campos para BAJA (sin coordenadas) + ESTADO fijo
             campos_config = [
                 {'nombre': 'G3E_FID', 'componente': 'CCOMUN', 'atributo': 'G3E_FID'},
                 {'nombre': 'ESTADO', 'componente': 'CCOMUN', 'atributo': 'ESTADO'},
-                {'nombre': 'FECHA_FUERA_OPERACION', 'componente': 'CCOMUN', 'atributo': 'FECHA_FUERA_OPERACION'},
             ]
 
             # 4. Agregar cada campo con su número correcto (IGUAL que generar_xml)
@@ -3113,17 +2723,15 @@ class FileGenerator:
                 # Validar campos críticos específicos (según tipo de archivo)
                 try:
                     header_clean = [h.lstrip('\ufeff') for h in header_fields]
-                    es_baja_g3e = header_clean == ['G3E_FID'] or header_clean == ['G3E_FID', 'ESTADO'] or header_clean == ['G3E_FID', 'ESTADO', 'FECHA_FUERA_OPERACION']
+                    es_baja_g3e = header_clean == ['G3E_FID'] or header_clean == ['G3E_FID', 'ESTADO']
                     es_baja_ant = header_clean and header_clean[0] == 'FID_ANTERIOR'
 
                     if es_baja_g3e:
-                        # BAJA nuevo formato: una, dos o tres columnas (G3E_FID[, ESTADO[, FECHA_FUERA_OPERACION]]) sin validar coordenadas
+                        # BAJA nuevo formato: una o dos columnas (G3E_FID[, ESTADO]) sin validar coordenadas
                         if len(header_clean) == 1 and len(fields) != 1:
                             errores.append(f"Línea {i}: se esperaba 1 campo (G3E_FID) y se encontraron {len(fields)}")
                         if len(header_clean) == 2 and len(fields) != 2:
                             errores.append(f"Línea {i}: se esperaban 2 campos (G3E_FID|ESTADO) y se encontraron {len(fields)}")
-                        if len(header_clean) == 3 and len(fields) != 3:
-                            errores.append(f"Línea {i}: se esperaban 3 campos (G3E_FID|ESTADO|FECHA_FUERA_OPERACION) y se encontraron {len(fields)}")
                     elif es_baja_ant:
                         # Formato antiguo de BAJA con coordenadas: mantener validación existente
                         if len(fields) >= 3:
@@ -3219,7 +2827,7 @@ class FileGenerator:
         Para NO-BAJAS: usa valores del Excel directamente
         """
         try:
-            filename = self._generar_nombre_archivo_con_indice('norma_nuevo', 'txt')
+            filename = f"norma_{self.proceso.id}.txt"
             filepath = os.path.join(self.base_path, filename)
 
             # 1) Intentar leer hoja de Normas explícita del Excel como fuente preferida
@@ -3318,7 +2926,7 @@ class FileGenerator:
                     tiene_encabezados = not all('Unnamed:' in str(col) for col in df_test.columns)
                     
                     if not tiene_encabezados:
-                        print("[TXT Norma] ⚠️ Excel sin encabezados detectado. Leyendo con header=None")
+                        print(f"[TXT Norma] ⚠️ Excel sin encabezados detectado. Leyendo con header=None")
                         # Leer sin encabezados
                         df_estructuras = pd.read_excel(archivo_path, sheet_name=nombre_hoja_estructuras, header=None)
                     else:
@@ -3374,9 +2982,8 @@ class FileGenerator:
             
             print(f"[TXT Norma] Total bajas detectadas: {len(enlace_a_codigo_op)}")
 
-            # 3) Escribir archivo con merge BD para bajas Y validación campo por campo para no-bajas
-            # ORDEN IGUAL QUE XML NORMA (sin ENLACE)
-            campos_orden = ['NORMA', 'GRUPO', 'CIRCUITO', 'CODIGO_TRAFO', 'MACRONORMA', 'CANTIDAD', 'TIPO_ADECUACION']
+            # 3) Escribir archivo con merge BD para bajas
+            campos_orden = ['ENLACE', 'NORMA', 'GRUPO', 'CIRCUITO', 'CODIGO_TRAFO', 'MACRONORMA', 'CANTIDAD', 'TIPO_ADECUACION']
 
             with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
                 f.write('|'.join(campos_orden) + '\n')
@@ -3385,13 +2992,13 @@ class FileGenerator:
                     # Base: datos del Excel
                     reg_out = {c: str(reg.get(c, '') or '').strip() for c in campos_orden}
                     
+                    # Si es BAJA (tiene código operativo): enriquecer desde BD
                     enlace_upper = reg_out.get('ENLACE', '').strip().upper()
                     codigo_op = enlace_a_codigo_op.get(enlace_upper)
                     
-                    # CASO 1: Si es BAJA (tiene código operativo) - merge BD completo
                     if codigo_op:
                         try:
-                            # Resolver FID desde código operativo
+                            # Resolver FID
                             fid_real = OracleHelper.obtener_fid_desde_codigo_operativo(codigo_op)
                             if fid_real:
                                 # Consultar BD
@@ -3401,42 +3008,11 @@ class FileGenerator:
                                     val_bd = str(datos_bd.get(campo, '') or '').strip()
                                     if val_bd:
                                         reg_out[campo] = val_bd
-                                print(f"[TXT Norma] BAJA ENLACE={reg_out['ENLACE']}: merge BD aplicado")
+                                print(f"[TXT Norma] BAJA ENLACE={reg_out['ENLACE']}: merge BD aplicado: {datos_bd}")
                             else:
                                 print(f"[TXT Norma] BAJA ENLACE={enlace_upper}: no se resolvió FID para {codigo_op}")
                         except Exception as e:
                             print(f"[TXT Norma] ERROR enriqueciendo BAJA {enlace_upper}: {e}")
-                    
-                    # CASO 2: Si NO es BAJA - validación campo por campo con BD
-                    else:
-                        try:
-                            # Buscar FID desde ENLACE
-                            fid_desde_enlace = OracleHelper.obtener_fid_desde_enlace(enlace_upper)
-                            
-                            if fid_desde_enlace:
-                                # Consultar datos de norma en BD
-                                datos_bd = OracleHelper.obtener_norma_por_fid(fid_desde_enlace) or {}
-                                
-                                # Validación campo por campo: solo cambiar si Excel != BD
-                                cambios = []
-                                for campo in ['NORMA', 'GRUPO', 'CIRCUITO', 'CODIGO_TRAFO', 'MACRONORMA', 'CANTIDAD', 'TIPO_ADECUACION']:
-                                    val_excel = reg_out.get(campo, '').strip()
-                                    val_bd = str(datos_bd.get(campo, '') or '').strip()
-                                    
-                                    # Solo reemplazar si:
-                                    # 1. BD tiene valor (no vacío)
-                                    # 2. Excel != BD
-                                    if val_bd and val_excel != val_bd:
-                                        cambios.append(f"{campo}: '{val_excel}' → '{val_bd}'")
-                                        reg_out[campo] = val_bd
-                                
-                                if cambios:
-                                    print(f"[TXT Norma] VALIDACIÓN ENLACE={enlace_upper}: {', '.join(cambios)}")
-                            else:
-                                # No existe en BD, usar valores del Excel
-                                print(f"[TXT Norma] ENLACE={enlace_upper}: no encontrado en BD, usando datos del Excel")
-                        except Exception as e:
-                            print(f"[TXT Norma] ERROR validando ENLACE {enlace_upper}: {e}")
                     
                     # Valores por defecto
                     if not reg_out.get('CANTIDAD'):
@@ -3572,7 +3148,7 @@ class FileGenerator:
             from xml.etree.ElementTree import Element, SubElement, tostring
             from xml.dom import minidom
             
-            filename = self._generar_nombre_archivo_con_indice('norma_nuevo', 'xml')
+            filename = f"norma_{self.proceso.id}.xml"
             filepath = os.path.join(self.base_path, filename)
             
             # Crear estructura XML
@@ -3588,16 +3164,17 @@ class FileGenerator:
             # Crear sección de campos
             campos = SubElement(root, 'Campos')
             
-            # Configuración de campos para norma XML (SIN ENLACE)
-            # NORMA|GRUPO|CIRCUITO|CODIGO_TRAFO|MACRONORMA|CANTIDAD|TIPO_ADECUACION
+            # Configuración de campos para norma - ORDEN Y CAMPOS EXACTOS SEGÚN ESPECIFICACIÓN
             campos_config = [
                 {'nombre': 'NORMA', 'componente': 'NORMA', 'atributo': 'NORMA'},
                 {'nombre': 'GRUPO', 'componente': 'NORMA', 'atributo': 'GRUPO'},
                 {'nombre': 'CIRCUITO', 'componente': 'NORMA', 'atributo': 'CIRCUITO'},
                 {'nombre': 'CODIGO_TRAFO', 'componente': 'NORMA', 'atributo': 'CODIGO_TRAFO'},
-                {'nombre': 'MACRONORMA', 'componente': 'NORMA', 'atributo': 'MACRONORMA'},
                 {'nombre': 'CANTIDAD', 'componente': 'NORMA', 'atributo': 'CANTIDAD'},
+                {'nombre': 'MACRONORMA', 'componente': 'NORMA', 'atributo': 'MACRONORMA'},
+                {'nombre': 'FECHA_INSTALACION', 'componente': 'NORMA', 'atributo': 'FECHA_INSTALACION'},
                 {'nombre': 'TIPO_ADECUACION', 'componente': 'NORMA', 'atributo': 'TIPO_ADECUACION'},
+                {'nombre': 'OBSERVACIONES', 'componente': 'NORMA', 'atributo': 'OBSERVACIONES'},
             ]
             
             # Agregar cada campo
@@ -3648,7 +3225,7 @@ class FileGenerator:
             from xml.etree.ElementTree import Element, SubElement, tostring
             from xml.dom import minidom
             
-            filename = self._generar_nombre_archivo_con_indice('estructuras_nuevo', 'xml')
+            filename = f"estructuras_{self.proceso.id}.xml"
             filepath = os.path.join(self.base_path, filename)
             
             # CONTAR registros sin FID para el XML NUEVO
@@ -3676,11 +3253,18 @@ class FileGenerator:
             campos = SubElement(root, 'Campos')
             
             # Estructura alineada con TXT NUEVO, sin coordenadas en XML NUEVO
-            # ORDEN POR TABLA (Componente): CCOMUN → EPOSTE_AT → CPROPIETARIO → G3E_GEOMETRY
             campos_config = [
-                # CCOMUN (tabla más frecuente)
-                {'nombre': 'UBICACION', 'componente': 'CCOMUN', 'atributo': 'UBICACION'},
+                # EPOSTE_AT
+                {'nombre': 'GRUPO', 'componente': 'EPOSTE_AT', 'atributo': 'GRUPO'},
+                {'nombre': 'TIPO', 'componente': 'EPOSTE_AT', 'atributo': 'TIPO'},
+                {'nombre': 'CLASE', 'componente': 'EPOSTE_AT', 'atributo': 'CLASE'},
+                {'nombre': 'USO', 'componente': 'EPOSTE_AT', 'atributo': 'USO'},
+                # CCOMUN y otros
                 {'nombre': 'ESTADO', 'componente': 'CCOMUN', 'atributo': 'ESTADO'},
+                {'nombre': 'TIPO_ADECUACION', 'componente': 'EPOSTE_AT', 'atributo': 'TIPO_ADECUACION'},
+                {'nombre': 'PROPIETARIO', 'componente': 'CPROPIETARIO', 'atributo': 'PROPIETARIO_1'},
+                {'nombre': 'PORCENTAJE_PROPIEDAD', 'componente': 'CPROPIETARIO', 'atributo': 'PORCENTAJE_PROP_1'},
+                {'nombre': 'UBICACION', 'componente': 'CCOMUN', 'atributo': 'UBICACION'},
                 {'nombre': 'CODIGO_MATERIAL', 'componente': 'CCOMUN', 'atributo': 'CODIGO_MATERIAL'},
                 {'nombre': 'FECHA_INSTALACION', 'componente': 'CCOMUN', 'atributo': 'FECHA_INSTALACION'},
                 {'nombre': 'FECHA_OPERACION', 'componente': 'CCOMUN', 'atributo': 'FECHA_OPERACION'},
@@ -3695,17 +3279,11 @@ class FileGenerator:
                 {'nombre': 'OT_MAXIMO', 'componente': 'CCOMUN', 'atributo': 'OT_MAXIMO'},
                 {'nombre': 'CODIGO_MARCACION', 'componente': 'CCOMUN', 'atributo': 'CODIGO_MARCACION'},
                 {'nombre': 'SALINIDAD', 'componente': 'CCOMUN', 'atributo': 'SALINIDAD'},
+                # NUEVO: FID_ANTERIOR para reposiciones, ubicado entre SALINIDAD y ENLACE
                 {'nombre': 'FID_ANTERIOR', 'componente': 'CCOMUN', 'atributo': 'FID_ANTERIOR'},
-                # EPOSTE_AT (segunda tabla más frecuente)
-                {'nombre': 'GRUPO', 'componente': 'EPOSTE_AT', 'atributo': 'GRUPO'},
-                {'nombre': 'TIPO', 'componente': 'EPOSTE_AT', 'atributo': 'TIPO'},
-                {'nombre': 'CLASE', 'componente': 'EPOSTE_AT', 'atributo': 'CLASE'},
-                {'nombre': 'USO', 'componente': 'EPOSTE_AT', 'atributo': 'USO'},
-                {'nombre': 'TIPO_ADECUACION', 'componente': 'EPOSTE_AT', 'atributo': 'TIPO_ADECUACION'},
-                # CPROPIETARIO (tercera tabla)
-                {'nombre': 'PROPIETARIO', 'componente': 'CPROPIETARIO', 'atributo': 'PROPIETARIO_1'},
-                {'nombre': 'PORCENTAJE_PROPIEDAD', 'componente': 'CPROPIETARIO', 'atributo': 'PORCENTAJE_PROP_1'},
-                # G3E_GEOMETRY como último campo (placeholder de geometría) - NO SE MUEVE
+                # ENLACE sin mapeo a BD (vacío)
+                {'nombre': 'ENLACE', 'componente': '', 'atributo': ''},
+                # G3E_GEOMETRY como último campo (placeholder de geometría)
                 {'nombre': 'G3E_GEOMETRY', 'componente': '', 'atributo': ''},
             ]
 
