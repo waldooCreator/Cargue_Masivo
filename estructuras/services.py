@@ -177,6 +177,27 @@ class OracleHelper:
         }
     
     @classmethod
+    def get_connection(cls):
+        """
+        Crea y retorna una conexión a Oracle usando las credenciales de settings.
+        Esta es una función de contexto (context manager) que debe usarse con 'with'.
+        
+        Returns:
+            oracledb.Connection: Conexión a Oracle
+            
+        Raises:
+            Exception: Si no se puede conectar a Oracle
+            
+        Example:
+            with OracleHelper.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM table")
+                result = cursor.fetchall()
+        """
+        oracle_config = cls.get_oracle_config()
+        return oracledb.connect(**oracle_config)
+    
+    @classmethod
     def test_connection(cls) -> bool:
         """
         Prueba la conexión a Oracle sin ejecutar queries.
@@ -3115,6 +3136,19 @@ class FileGenerator:
                     header_clean = [h.lstrip('\ufeff') for h in header_fields]
                     es_baja_g3e = header_clean == ['G3E_FID'] or header_clean == ['G3E_FID', 'ESTADO'] or header_clean == ['G3E_FID', 'ESTADO', 'FECHA_FUERA_OPERACION']
                     es_baja_ant = header_clean and header_clean[0] == 'FID_ANTERIOR'
+                    
+                    # Detectar archivos LÍNEA/CONDUCTOR por headers característicos
+                    # Buscar si alguno de los headers clave de LÍNEA está presente
+                    keywords_linea = ['coor_gps_lat', 'coor_gps_lon', 'Identificador_1', 'Identificador_2', 'Coordenada_Y2', 'Coordenada_X2']
+                    es_linea = any(keyword in header_clean for keyword in keywords_linea)
+                    es_norma = 'NORMA' in header_clean
+                    
+                    # DEBUG: Mostrar detección solo para primera línea
+                    if i == 2:  # Primera línea de datos
+                        print("🔍 DEBUG Validación TXT:")
+                        print(f"   Headers: {header_clean[:10]}...")
+                        print(f"   es_baja_g3e={es_baja_g3e}, es_baja_ant={es_baja_ant}")
+                        print(f"   es_linea={es_linea}, es_norma={es_norma}")
 
                     if es_baja_g3e:
                         # BAJA nuevo formato: una, dos o tres columnas (G3E_FID[, ESTADO[, FECHA_FUERA_OPERACION]]) sin validar coordenadas
@@ -3132,14 +3166,58 @@ class FileGenerator:
                             if lat and lon:
                                 float(lat.replace(',', '.'))
                                 float(lon.replace(',', '.'))
+                    elif es_linea:
+                        # Archivos LÍNEA/CONDUCTOR: validar campos específicos
+                        # Buscar índices de campos críticos (nombres de BD Oracle)
+                        idx_id1 = header_clean.index('Identificador_1') if 'Identificador_1' in header_clean else -1
+                        idx_id2 = header_clean.index('Identificador_2') if 'Identificador_2' in header_clean else -1
+                        idx_lat = header_clean.index('coor_gps_lat') if 'coor_gps_lat' in header_clean else -1
+                        idx_lon = header_clean.index('coor_gps_lon') if 'coor_gps_lon' in header_clean else -1
+                        idx_uc = header_clean.index('uc') if 'uc' in header_clean else -1
+                        
+                        # Validar identificadores no vacíos
+                        if idx_id1 >= 0 and idx_id1 < len(fields):
+                            if not fields[idx_id1] or fields[idx_id1].strip() == '':
+                                errores.append(f"Línea {i}: Identificador_1 está vacío")
+                        
+                        if idx_id2 >= 0 and idx_id2 < len(fields):
+                            if not fields[idx_id2] or fields[idx_id2].strip() == '':
+                                errores.append(f"Línea {i}: Identificador_2 está vacío")
+                        
+                        # Validar coordenadas si existen (formato decimal válido)
+                        if idx_lat >= 0 and idx_lat < len(fields) and fields[idx_lat]:
+                            try:
+                                float(fields[idx_lat].replace(',', '.'))
+                            except ValueError:
+                                errores.append(f"Línea {i}: coor_gps_lat no es un número válido")
+                        
+                        if idx_lon >= 0 and idx_lon < len(fields) and fields[idx_lon]:
+                            try:
+                                float(fields[idx_lon].replace(',', '.'))
+                            except ValueError:
+                                errores.append(f"Línea {i}: coor_gps_lon no es un número válido")
+                        
+                        # Validar UC no vacía (la regla de DESMANTELADO se valida antes de generar el archivo)
+                        if idx_uc >= 0 and idx_uc < len(fields):
+                            if not fields[idx_uc] or fields[idx_uc].strip() == '':
+                                # UC vacía solo es válida si es DESMANTELADO (sin identificadores)
+                                tiene_id1 = idx_id1 >= 0 and idx_id1 < len(fields) and fields[idx_id1] and fields[idx_id1].strip()
+                                tiene_id2 = idx_id2 >= 0 and idx_id2 < len(fields) and fields[idx_id2] and fields[idx_id2].strip()
+                                if tiene_id1 or tiene_id2:
+                                    errores.append(f"Línea {i}: uc vacía pero tiene identificadores (no es DESMANTELADO)")
+                    elif es_norma:
+                        # Archivos NORMA: validar campos específicos
+                        # No validar coordenadas en archivos NORMA
+                        pass
                     else:
-                        # Archivos normales: validar coordenadas X/Y
+                        # Archivos ESTRUCTURAS normales: validar coordenadas X/Y
                         coord_x = fields[0] if fields and fields[0] else '0'
                         coord_y = fields[1] if len(fields) > 1 and fields[1] else '0'
                         float(coord_x.replace(',', '.'))
                         float(coord_y.replace(',', '.'))
                 except (ValueError, IndexError):
-                    errores.append(f"Línea {i}: coordenadas inválidas")
+                    if not es_linea and not es_norma:  # Solo reportar error de coordenadas si NO es LÍNEA ni NORMA
+                        errores.append(f"Línea {i}: coordenadas inválidas")
             
             # Verificar encoding UTF-8
             try:
@@ -3745,6 +3823,1011 @@ class FileGenerator:
 
         except Exception as e:
             raise Exception(f"Error generando archivo XML: {str(e)}")
+
+    # ============================================================================
+    # FUNCIONES PARA CONDUCTORES (LÍNEA)
+    # ============================================================================
+
+    def generar_txt_linea(self):
+        """
+        Genera archivo TXT con datos de conductores (NUEVO) desde la hoja 'Conductor_N1-N2-N3'.
+        
+        Reglas de negocio:
+        - NUEVO: NO tiene "Código FID GIT" O (tiene ambos "Código FID GIT" y "Unidad Constructiva")
+        - Se excluyen registros con "Código FID GIT" pero SIN "Unidad Constructiva" (van a BAJA)
+        - Validación: "Unidad Constructiva" NO puede estar vacía (excepto para DESMANTELADOS)
+        - Para REPOSICIÓN (tiene ambos campos), validar contra BD y reemplazar campos si difieren
+        """
+        try:
+            filename = self._generar_nombre_archivo_con_indice('conductores_linea', 'txt')
+            filepath = os.path.join(self.base_path, filename)
+            
+            # 1. Leer datos desde la hoja "Conductor_N1-N2-N3"
+            datos_conductor = self._leer_hoja_conductores()
+            
+            if not datos_conductor:
+                raise Exception("No hay datos en la hoja 'Conductor_N1-N2-N3'")
+            
+            print(f"DEBUG generar_txt_linea: {len(datos_conductor)} registros leídos desde 'Conductor_N1-N2-N3'")
+            
+            # 2. Filtrar registros para NUEVO (excluir los que van a BAJA)
+            datos_nuevo = []
+            for i, registro in enumerate(datos_conductor):
+                fid_git = self._extraer_campo_conductor(registro, 'codigo_fid_git')
+                unidad_constructiva = self._extraer_campo_conductor(registro, 'unidad_constructiva')
+                
+                # DEBUG: Mostrar valores extraídos para cada registro
+                print(f"🔍 Registro {i+1}: FID_GIT='{fid_git}', UC='{unidad_constructiva}'")
+                
+                # REGLA: Excluir si tiene FID pero NO tiene UC (estos van a BAJA)
+                if fid_git and not unidad_constructiva:
+                    print(f"   ❌ EXCLUIDO (tiene FID '{fid_git}' pero NO tiene UC) -> va a BAJA")
+                    continue
+                
+                # VALIDACIÓN: UC no puede estar vacía (excepto DESMANTELADOS que ya fueron excluidos)
+                if not fid_git and not unidad_constructiva:
+                    print("   ⚠️ EXCLUIDO (sin FID y sin UC) - validación")
+                    continue
+                
+                # Si llegamos aquí, es NUEVO
+                print("   ✅ INCLUIDO como NUEVO")
+                datos_nuevo.append(registro)
+            
+            print(f"DEBUG generar_txt_linea: {len(datos_nuevo)} registros clasificados como NUEVO de {len(datos_conductor)} totales")
+            
+            if not datos_nuevo:
+                raise Exception("No hay registros NUEVO para generar archivo TXT Línea")
+            
+            # 3. Enriquecer datos de REPOSICIÓN desde Oracle
+            datos_finales = self._enriquecer_conductores_reposicion(datos_nuevo)
+            
+            # 4. Mapear campos del Excel a campos de salida (nombres de BD Oracle)
+            datos_mapeados = []
+            for registro in datos_finales:
+                # Mapear a nombres de columnas de BD Oracle (econ_pri_at + ccomun + cpropietario)
+                reg_mapeado = {
+                    # Campos de Excel que mantienen su nombre
+                    'Tipo': self._extraer_campo_conductor(registro, 'tipo'),
+                    'Clase': self._extraer_campo_conductor(registro, 'clase'),
+                    'Calibre': self._extraer_campo_conductor(registro, 'calibre'),
+                    'Número de conductores': self._extraer_campo_conductor(registro, 'numero_conductores'),
+                    'Nivel de Tension': self._extraer_campo_conductor(registro, 'nivel_tension'),
+                    'Fases': self._extraer_campo_conductor(registro, 'fases'),
+                    'Identificador_1': self._extraer_campo_específico(registro, 'Identificador_1'),
+                    'Identificador_2': self._extraer_campo_específico(registro, 'Identificador_2'),
+                    
+                    # Campos mapeados a nombres de BD Oracle
+                    'coor_gps_lat': self._extraer_campo_conductor(registro, 'coordenada_y1'),  # Latitud Nodo 1
+                    'coor_gps_lon': self._extraer_campo_conductor(registro, 'coordenada_x1'),  # Longitud Nodo 1
+                    'Coordenada_Y2': self._extraer_campo_conductor(registro, 'coordenada_y2'),  # Latitud Nodo 2
+                    'Coordenada_X2': self._extraer_campo_conductor(registro, 'coordenada_x2'),  # Longitud Nodo 2
+                    'estado': '',  # Estado operativo - pendiente definir
+                    'ubicacion': self._extraer_campo_conductor(registro, 'ubicacion'),
+                    'codigo_material': self._extraer_campo_conductor(registro, 'codigo_material'),
+                    'fecha_instalacion': self._extraer_campo_conductor(registro, 'fecha_instalacion'),
+                    'fecha_operacion': '',  # Pendiente
+                    'proyecto': self._extraer_campo_conductor(registro, 'proyecto'),
+                    'empresa_origen': '',  # Pendiente
+                    'observaciones': '',
+                    'tipo_proyecto': self._extraer_campo_conductor(registro, 'tipo_proyecto'),
+                    'id_mercado': '',
+                    'clasificacion_mercado': '',
+                    'uc': self._extraer_campo_conductor(registro, 'unidad_constructiva'),
+                    'estado_salud': '',  # Pendiente
+                    'ot_maximo': '',
+                    'codigo_marcacion': '',
+                    'salinidad': '',
+                    'uso': 'DISTRIBUCION ENERGIA',  # Valor por defecto
+                    'propietario_1': self.proceso.propietario_definido if hasattr(self.proceso, 'propietario_definido') and self.proceso.propietario_definido else '',
+                    'porcentaje_prop_1': '100',
+                    
+                    # Campos adicionales
+                    'Circuito': self.proceso.circuito if hasattr(self.proceso, 'circuito') and self.proceso.circuito else '',
+                    'Municipio': self._extraer_campo_conductor(registro, 'municipio'),
+                    'Poblacion': self._extraer_campo_conductor(registro, 'poblacion'),
+                    'Codigo Inventario': self._extraer_campo_conductor(registro, 'codigo_inventario'),
+                    'Longitud': '',  # Pendiente: calcular longitud del conductor
+                }
+                datos_mapeados.append(reg_mapeado)
+            
+            # 5. Definir encabezados en orden (nombres exactos de BD Oracle + campos Excel)
+            encabezados = [
+                # Campos de identificación y tipo
+                'Tipo', 'Clase', 'codigo_material', 'Calibre',
+                'Número de conductores', 'uso', 'Nivel de Tension',
+                
+                # Fechas
+                'fecha_instalacion', 'fecha_operacion',
+                
+                # Estado y operación
+                'estado', 'estado_salud', 'ot_maximo',
+                
+                # Propiedad
+                'propietario_1', 'porcentaje_prop_1',
+                
+                # Ubicación y geografía
+                'Circuito', 'Municipio', 'Poblacion', 'ubicacion',
+                
+                # Coordenadas de nodos
+                'coor_gps_lat', 'coor_gps_lon',  # Nodo 1
+                'Coordenada_Y2', 'Coordenada_X2',  # Nodo 2
+                
+                # Identificadores de nodos
+                'Identificador_1', 'Identificador_2',
+                
+                # Características físicas
+                'Longitud', 'Fases',
+                
+                # Clasificación
+                'uc', 'tipo_proyecto', 'id_mercado', 'clasificacion_mercado',
+                
+                # Marcación y otros
+                'codigo_marcacion', 'salinidad', 'Codigo Inventario',
+                
+                # Proyecto y observaciones
+                'proyecto', 'empresa_origen', 'observaciones'
+            ]
+            
+            # 6. Escribir archivo TXT
+            with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
+                # Escribir encabezados
+                f.write('|'.join(encabezados) + '\n')
+                
+                # Escribir datos
+                for i, registro in enumerate(datos_mapeados):
+                    valores = []
+                    for campo in encabezados:
+                        valor = registro.get(campo, '')
+                        # Limpiar el valor
+                        valor_limpio = self._limpiar_valor_para_txt(valor)
+                        valores.append(valor_limpio)
+                    f.write('|'.join(valores) + '\n')
+            
+            # 7. Validar el archivo generado
+            self._validar_archivo_txt(filepath)
+            
+            print(f"✅ Archivo TXT Línea NUEVO generado exitosamente: {filename} con {len(datos_mapeados)} registros")
+            return filename
+            
+        except Exception as e:
+            raise Exception(f"Error generando archivo TXT Línea: {str(e)}")
+
+    def generar_txt_baja_linea(self):
+        """
+        Genera archivo TXT de BAJA para conductores desde la hoja 'Conductor_N1-N2-N3'.
+        
+        Reglas de negocio:
+        - BAJA: Tiene "Código FID GIT" pero NO tiene "Unidad Constructiva"
+        - Campos: G3E_FID, ESTADO, FECHA_FUERA_OPERACION
+        - ESTADO: Siempre "RETIRADO"
+        - FECHA_FUERA_OPERACION: 
+          * DESMANTELADO (sin Identificador): Fecha de hoy
+          * REPOSICIÓN (con Identificador): Fecha Instalación del Excel
+        """
+        try:
+            filename = self._generar_nombre_archivo_con_indice('conductores_linea_baja', 'txt')
+            filepath = os.path.join(self.base_path, filename)
+            
+            # 1. Leer datos desde la hoja "Conductor_N1-N2-N3"
+            datos_conductor = self._leer_hoja_conductores()
+            
+            if not datos_conductor:
+                raise Exception("No hay datos en la hoja 'Conductor_N1-N2-N3'")
+            
+            print(f"DEBUG generar_txt_baja_linea: {len(datos_conductor)} registros leídos")
+            
+            # 2. Filtrar registros para BAJA (tiene FID pero NO UC)
+            datos_baja = []
+            for i, registro in enumerate(datos_conductor):
+                fid_git = self._extraer_campo_conductor(registro, 'codigo_fid_git')
+                unidad_constructiva = self._extraer_campo_conductor(registro, 'unidad_constructiva')
+                
+                # DEBUG: Mostrar valores extraídos
+                print(f"🔍 Registro {i+1} BAJA: FID_GIT='{fid_git}', UC='{unidad_constructiva}'")
+                
+                # REGLA: Incluir solo si tiene FID pero NO tiene UC
+                if fid_git and not unidad_constructiva:
+                    print(f"   ✅ INCLUIDO como BAJA (FID: '{fid_git}', UC: vacía)")
+                    datos_baja.append(registro)
+                else:
+                    print("   ❌ EXCLUIDO (no cumple regla: FID sin UC)")
+            
+            print(f"DEBUG generar_txt_baja_linea: {len(datos_baja)} registros clasificados como BAJA")
+            
+            if not datos_baja:
+                print("⚠️ WARNING: No hay registros BAJA para generar archivo TXT Línea BAJA")
+                # Retornar archivo vacío o lanzar excepción según preferencia
+                raise Exception("No hay registros BAJA para generar archivo TXT Línea BAJA")
+            
+            # 3. Resolver G3E_FID (convertir código operativo a FID si es necesario)
+            oracle_disponible = OracleHelper.test_connection()
+            
+            for i, registro in enumerate(datos_baja):
+                codigo_git = self._extraer_campo_conductor(registro, 'codigo_fid_git')
+                
+                if codigo_git:
+                    codigo_norm = str(codigo_git).strip()
+                    
+                    # Si el código empieza con 'Z', es código operativo y debe convertirse
+                    if oracle_disponible and codigo_norm.upper().startswith('Z'):
+                        fid_real = OracleHelper.obtener_fid_desde_codigo_operativo(codigo_norm)
+                        if fid_real:
+                            registro['G3E_FID'] = str(fid_real)
+                            print(f"✅ Código operativo '{codigo_norm}' convertido a FID '{fid_real}'")
+                        else:
+                            # Si no se puede resolver, usar el código tal cual
+                            registro['G3E_FID'] = self._limpiar_fid(codigo_norm)
+                            print(f"⚠️ No se pudo resolver código operativo '{codigo_norm}', usando tal cual")
+                    else:
+                        # Si no empieza con Z, asumir que ya es FID
+                        registro['G3E_FID'] = self._limpiar_fid(codigo_norm)
+            
+            # 4. Determinar FECHA_FUERA_OPERACION según tipo
+            from datetime import datetime
+            fecha_hoy = datetime.now().strftime('%d/%m/%Y')
+            
+            for i, registro in enumerate(datos_baja):
+                # Siempre RETIRADO
+                registro['ESTADO'] = 'RETIRADO'
+                
+                # Verificar si es REPOSICIÓN o DESMANTELADO
+                identificador = self._extraer_campo_conductor(registro, 'identificador')
+                
+                if identificador and str(identificador).strip():
+                    # REPOSICIÓN: usar Fecha Instalación
+                    fecha_instalacion = self._extraer_campo_conductor(registro, 'fecha_instalacion')
+                    registro['FECHA_FUERA_OPERACION'] = fecha_instalacion if fecha_instalacion else fecha_hoy
+                    print(f"✅ REPOSICIÓN: FID {registro.get('G3E_FID')} -> FECHA={registro['FECHA_FUERA_OPERACION']}")
+                else:
+                    # DESMANTELADO: usar fecha de hoy
+                    registro['FECHA_FUERA_OPERACION'] = fecha_hoy
+                    print(f"✅ DESMANTELADO: FID {registro.get('G3E_FID')} -> FECHA={fecha_hoy}")
+            
+            # 5. Escribir archivo TXT
+            encabezados = ['G3E_FID', 'ESTADO', 'FECHA_FUERA_OPERACION']
+            
+            with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
+                # Escribir encabezados
+                f.write('|'.join(encabezados) + '\n')
+                
+                # Escribir datos
+                for registro in datos_baja:
+                    valores = []
+                    for campo in encabezados:
+                        valor = registro.get(campo, '')
+                        valor_limpio = self._limpiar_valor_para_txt(valor)
+                        valores.append(valor_limpio)
+                    f.write('|'.join(valores) + '\n')
+            
+            # 6. Validar archivo generado
+            self._validar_archivo_txt(filepath)
+            
+            print(f"✅ Archivo TXT Línea BAJA generado exitosamente: {filename} con {len(datos_baja)} registros")
+            return filename
+            
+        except Exception as e:
+            raise Exception(f"Error generando archivo TXT Línea BAJA: {str(e)}")
+
+    def generar_xml_linea(self):
+        """
+        Genera archivo XML de configuración para LÍNEA (conductores NUEVO).
+        Alineado 1:1 con generar_txt_linea() - DEBE coincidir exactamente con los encabezados del TXT.
+        
+        Encabezados TXT Línea:
+        Tipo|Clase|codigo_material|Calibre|Número de conductores|uso|Nivel de Tension|
+        fecha_instalacion|fecha_operacion|estado|estado_salud|ot_maximo|propietario_1|porcentaje_prop_1|
+        Circuito|Municipio|Poblacion|ubicacion|coor_gps_lat|coor_gps_lon|Coordenada_Y2|Coordenada_X2|
+        Identificador_1|Identificador_2|Longitud|Fases|uc|tipo_proyecto|id_mercado|clasificacion_mercado|
+        codigo_marcacion|salinidad|Codigo Inventario|proyecto|empresa_origen|observaciones
+        """
+        try:
+            from xml.etree.ElementTree import Element, SubElement, tostring
+            from xml.dom import minidom
+            
+            filename = self._generar_nombre_archivo_con_indice('conductores_linea', 'xml')
+            filepath = os.path.join(self.base_path, filename)
+            
+            # 1. Contar registros NUEVO (NO FID O (FID+UC))
+            datos_conductor = self._leer_hoja_conductores()
+            registros_nuevo = 0
+            
+            if datos_conductor:
+                for registro in datos_conductor:
+                    fid_git = self._extraer_campo_conductor(registro, 'codigo_fid_git')
+                    unidad_constructiva = self._extraer_campo_conductor(registro, 'unidad_constructiva')
+                    
+                    # NUEVO: NO tiene FID O (tiene ambos FID y UC)
+                    if not fid_git or (fid_git and unidad_constructiva):
+                        registros_nuevo += 1
+            
+            print(f"DEBUG: XML Línea - {registros_nuevo} registros NUEVO")
+            
+            # 2. Crear estructura XML según especificación
+            root = Element('Configuracion')
+            
+            # Elemento principal
+            elemento = SubElement(root, 'Elemento')
+            elemento.text = 'Poste'
+            
+            # Contenedor de campos
+            campos = SubElement(root, 'Campos')
+            
+            # 3. Definición de campos EXACTAMENTE como en TXT Línea
+            # IMPORTANTE: Orden y nombres deben coincidir 1:1 con los encabezados del TXT
+            # Campos que vienen de Oracle (tabla econ_pri_at + ccomun + cpropietario)
+            campos_config = [
+                # Campos de identificación y tipo (no están en Oracle, vienen del Excel)
+                {'nombre': 'Tipo', 'componente': '', 'atributo': ''},
+                {'nombre': 'Clase', 'componente': '', 'atributo': ''},
+                {'nombre': 'codigo_material', 'componente': 'CCOMUN', 'atributo': 'CODIGO_MATERIAL'},
+                {'nombre': 'Calibre', 'componente': '', 'atributo': ''},
+                {'nombre': 'Número de conductores', 'componente': '', 'atributo': ''},
+                {'nombre': 'uso', 'componente': 'ECON_PRI_AT', 'atributo': 'USO'},
+                {'nombre': 'Nivel de Tension', 'componente': '', 'atributo': ''},
+                
+                # Fechas
+                {'nombre': 'fecha_instalacion', 'componente': 'CCOMUN', 'atributo': 'FECHA_INSTALACION'},
+                {'nombre': 'fecha_operacion', 'componente': 'CCOMUN', 'atributo': 'FECHA_OPERACION'},
+                
+                # Estado y operación
+                {'nombre': 'estado', 'componente': 'CCOMUN', 'atributo': 'ESTADO'},
+                {'nombre': 'estado_salud', 'componente': 'CCOMUN', 'atributo': 'ESTADO_SALUD'},
+                {'nombre': 'ot_maximo', 'componente': 'CCOMUN', 'atributo': 'OT_MAXIMO'},
+                
+                # Propiedad
+                {'nombre': 'propietario_1', 'componente': 'CPROPIETARIO', 'atributo': 'PROPIETARIO_1'},
+                {'nombre': 'porcentaje_prop_1', 'componente': 'CPROPIETARIO', 'atributo': 'PORCENTAJE_PROP_1'},
+                
+                # Ubicación y geografía (no están en Oracle, vienen del Excel)
+                {'nombre': 'Circuito', 'componente': '', 'atributo': ''},
+                {'nombre': 'Municipio', 'componente': '', 'atributo': ''},
+                {'nombre': 'Poblacion', 'componente': '', 'atributo': ''},
+                {'nombre': 'ubicacion', 'componente': 'CCOMUN', 'atributo': 'UBICACION'},
+                
+                # Coordenadas de nodos
+                {'nombre': 'coor_gps_lat', 'componente': 'CCOMUN', 'atributo': 'COOR_GPS_LAT'},
+                {'nombre': 'coor_gps_lon', 'componente': 'CCOMUN', 'atributo': 'COOR_GPS_LON'},
+                {'nombre': 'Coordenada_Y2', 'componente': '', 'atributo': ''},  # Nodo 2 - Excel
+                {'nombre': 'Coordenada_X2', 'componente': '', 'atributo': ''},  # Nodo 2 - Excel
+                
+                # Identificadores de nodos (no están en Oracle, vienen del Excel)
+                {'nombre': 'Identificador_1', 'componente': '', 'atributo': ''},
+                {'nombre': 'Identificador_2', 'componente': '', 'atributo': ''},
+                
+                # Características físicas (no están en Oracle, vienen del Excel)
+                {'nombre': 'Longitud', 'componente': '', 'atributo': ''},
+                {'nombre': 'Fases', 'componente': '', 'atributo': ''},
+                
+                # Clasificación
+                {'nombre': 'uc', 'componente': 'CCOMUN', 'atributo': 'UC'},
+                {'nombre': 'tipo_proyecto', 'componente': 'CCOMUN', 'atributo': 'TIPO_PROYECTO'},
+                {'nombre': 'id_mercado', 'componente': 'CCOMUN', 'atributo': 'ID_MERCADO'},
+                {'nombre': 'clasificacion_mercado', 'componente': 'CCOMUN', 'atributo': 'CLASIFICACION_MERCADO'},
+                
+                # Marcación y otros
+                {'nombre': 'codigo_marcacion', 'componente': 'CCOMUN', 'atributo': 'CODIGO_MARCACION'},
+                {'nombre': 'salinidad', 'componente': 'CCOMUN', 'atributo': 'SALINIDAD'},
+                {'nombre': 'Codigo Inventario', 'componente': '', 'atributo': ''},  # Excel
+                
+                # Proyecto y observaciones
+                {'nombre': 'proyecto', 'componente': 'CCOMUN', 'atributo': 'PROYECTO'},
+                {'nombre': 'empresa_origen', 'componente': 'CCOMUN', 'atributo': 'EMPRESA_ORIGEN'},
+                {'nombre': 'observaciones', 'componente': 'CCOMUN', 'atributo': 'OBSERVACIONES'},
+                
+                # G3E_GEOMETRY como último campo (placeholder de geometría)
+                {'nombre': 'G3E_GEOMETRY', 'componente': '', 'atributo': ''},
+            ]
+
+            # 4. Agregar cada campo con su número correcto
+            for i, campo_config in enumerate(campos_config):
+                campo_elem = SubElement(campos, f'Campo{i}')
+
+                nombre = SubElement(campo_elem, 'Nombre')
+                nombre.text = campo_config['nombre']
+
+                componente = SubElement(campo_elem, 'Componente')
+                componente.text = campo_config['componente']
+
+                atributo = SubElement(campo_elem, 'Atributo')
+                atributo.text = campo_config['atributo']
+
+            # 5. Formatear XML con indentación bonita
+            rough_string = tostring(root, 'utf-8')
+            reparsed = minidom.parseString(rough_string)
+            pretty_xml = reparsed.toprettyxml(indent="  ")
+
+            # Eliminar la declaración XML <?xml version="1.0" ?>
+            lines = pretty_xml.split('\n')
+            if lines[0].startswith('<?xml'):
+                lines = lines[1:]
+            while lines and lines[-1].strip() == '':
+                lines.pop()
+
+            pretty_xml_sin_declaracion = '\n'.join(lines)
+
+            # 6. Escribir archivo con UTF-8 BOM
+            with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
+                f.write(pretty_xml_sin_declaracion)
+
+            print(f"✅ Archivo XML Línea generado exitosamente: {filename} (configuración para {registros_nuevo} registros)")
+            return filename
+
+        except Exception as e:
+            raise Exception(f"Error generando archivo XML Línea: {str(e)}")
+
+    def generar_xml_baja_linea(self):
+        """
+        Genera archivo XML de configuración para BAJA LÍNEA (conductores).
+        Alineado con generar_txt_baja_linea(), para registros BAJA (FID sin UC).
+        
+        Campos para BAJA:
+        - G3E_FID: CCOMUN
+        - ESTADO: CCOMUN (siempre "RETIRADO")
+        - FECHA_FUERA_OPERACION: CCOMUN
+        """
+        try:
+            from xml.etree.ElementTree import Element, SubElement, tostring
+            from xml.dom import minidom
+            
+            filename = self._generar_nombre_archivo_con_indice('conductores_linea_baja', 'xml')
+            filepath = os.path.join(self.base_path, filename)
+            
+            # 1. Contar registros BAJA (tiene FID pero NO UC)
+            datos_conductor = self._leer_hoja_conductores()
+            registros_baja = 0
+            
+            if datos_conductor:
+                for registro in datos_conductor:
+                    fid_git = self._extraer_campo_conductor(registro, 'codigo_fid_git')
+                    unidad_constructiva = self._extraer_campo_conductor(registro, 'unidad_constructiva')
+                    
+                    # BAJA: tiene FID pero NO UC
+                    if fid_git and not unidad_constructiva:
+                        registros_baja += 1
+            
+            print(f"DEBUG: XML Baja Línea - {registros_baja} registros BAJA")
+            
+            # 2. Crear estructura XML según especificación
+            root = Element('Configuracion')
+            
+            # Elemento principal
+            elemento = SubElement(root, 'Elemento')
+            elemento.text = 'Poste'
+            
+            # Contenedor de campos
+            campos = SubElement(root, 'Campos')
+            
+            # 3. Definición de campos para BAJA LÍNEA (igual que BAJA estructuras)
+            campos_config = [
+                {'nombre': 'G3E_FID', 'componente': 'CCOMUN', 'atributo': 'G3E_FID'},
+                {'nombre': 'ESTADO', 'componente': 'CCOMUN', 'atributo': 'ESTADO'},
+                {'nombre': 'FECHA_FUERA_OPERACION', 'componente': 'CCOMUN', 'atributo': 'FECHA_FUERA_OPERACION'},
+            ]
+
+            # 4. Agregar cada campo con su número correcto
+            for i, campo_config in enumerate(campos_config):
+                campo_elem = SubElement(campos, f'Campo{i}')
+
+                nombre = SubElement(campo_elem, 'Nombre')
+                nombre.text = campo_config['nombre']
+
+                componente = SubElement(campo_elem, 'Componente')
+                componente.text = campo_config['componente']
+
+                atributo = SubElement(campo_elem, 'Atributo')
+                atributo.text = campo_config['atributo']
+
+            # 5. Formatear XML con indentación bonita
+            rough_string = tostring(root, 'utf-8')
+            reparsed = minidom.parseString(rough_string)
+            pretty_xml = reparsed.toprettyxml(indent="  ")
+
+            # Eliminar la declaración XML <?xml version="1.0" ?>
+            lines = pretty_xml.split('\n')
+            if lines[0].startswith('<?xml'):
+                lines = lines[1:]
+            while lines and lines[-1].strip() == '':
+                lines.pop()
+
+            pretty_xml_sin_declaracion = '\n'.join(lines)
+
+            # 6. Escribir archivo con UTF-8 BOM
+            with open(filepath, 'w', encoding='utf-8-sig', newline='') as f:
+                f.write(pretty_xml_sin_declaracion)
+
+            print(f"✅ Archivo XML Baja Línea generado exitosamente: {filename} (configuración para {registros_baja} registros)")
+            return filename
+
+        except Exception as e:
+            raise Exception(f"Error generando archivo XML Baja Línea: {str(e)}")
+
+    def _leer_hoja_conductores(self) -> List[Dict]:
+        """
+        Lee datos desde la hoja 'Conductor_N1-N2-N3' del Excel.
+        
+        Returns:
+            Lista de diccionarios con los datos de conductores
+        """
+        try:
+            archivo_path = self.proceso.archivo_excel.path
+            
+            # Leer todas las hojas
+            df_dict = pd.read_excel(archivo_path, sheet_name=None)
+            
+            # Buscar la hoja de conductores
+            nombre_hoja = None
+            for hoja in df_dict.keys():
+                if 'conductor' in hoja.lower() and ('n1' in hoja.lower() or 'n2' in hoja.lower() or 'n3' in hoja.lower()):
+                    nombre_hoja = hoja
+                    break
+            
+            if not nombre_hoja:
+                raise Exception("No se encontró la hoja 'Conductor_N1-N2-N3' en el archivo Excel")
+            
+            print(f"📄 Leyendo hoja de conductores: '{nombre_hoja}'")
+            
+            # Intentar diferentes estrategias para encontrar headers (igual que estructuras)
+            # Para conductores, buscamos headers que contengan nombres de campos esperados
+            df = None
+            header_row = None
+            
+            # Palabras clave que identifican headers reales de conductores
+            keywords_conductor = ['coordenada', 'identificador', 'código', 'fid', 'unidad', 'constructiva',
+                                 'longitud', 'latitud', 'calibre', 'tensión', 'propietario']
+            
+            # Función helper para contar headers válidos de conductor
+            def contar_headers_conductor(columns):
+                """Cuenta cuántos headers contienen palabras clave de conductor"""
+                count = 0
+                for col in columns:
+                    col_str = str(col).lower().replace('\n', ' ').replace('_', ' ')
+                    if any(keyword in col_str for keyword in keywords_conductor):
+                        count += 1
+                return count
+            
+            # Estrategia 1: Headers en fila 0
+            try:
+                temp_df = pd.read_excel(archivo_path, sheet_name=nombre_hoja, header=0)
+                valid_count = contar_headers_conductor(temp_df.columns)
+                print(f"🔍 Fila 0: {valid_count} headers de conductor encontrados")
+                if valid_count >= 5:  # Al menos 5 campos esperados
+                    df = temp_df
+                    header_row = 0
+                    print("✅ Headers de conductor encontrados en fila 0")
+            except Exception as e:
+                print(f"⚠️ Error leyendo fila 0: {e}")
+            
+            # Estrategia 2: Headers en fila 1
+            if df is None:
+                try:
+                    temp_df = pd.read_excel(archivo_path, sheet_name=nombre_hoja, header=1)
+                    valid_count = contar_headers_conductor(temp_df.columns)
+                    print(f"🔍 Fila 1: {valid_count} headers de conductor encontrados")
+                    if valid_count >= 5:
+                        df = temp_df
+                        header_row = 1
+                        print("✅ Headers de conductor encontrados en fila 1")
+                except Exception as e:
+                    print(f"⚠️ Error leyendo fila 1: {e}")
+            
+            # Estrategia 3: Headers en fila 2
+            if df is None:
+                try:
+                    temp_df = pd.read_excel(archivo_path, sheet_name=nombre_hoja, header=2)
+                    valid_count = contar_headers_conductor(temp_df.columns)
+                    print(f"🔍 Fila 2: {valid_count} headers de conductor encontrados")
+                    if valid_count >= 5:
+                        df = temp_df
+                        header_row = 2
+                        print("✅ Headers de conductor encontrados en fila 2")
+                except Exception as e:
+                    print(f"⚠️ Error leyendo fila 2: {e}")
+            
+            # Si no encontramos headers válidos, usar fila 2 como fallback (más probable para conductores)
+            if df is None:
+                print("⚠️ No se detectaron headers automáticamente, usando fila 2 como fallback")
+                df = pd.read_excel(archivo_path, sheet_name=nombre_hoja, header=2)
+                header_row = 2
+            
+            print(f"📊 Columnas encontradas en '{nombre_hoja}' (header en fila {header_row}):")
+            for idx, col in enumerate(df.columns[:10], 1):  # Mostrar solo primeras 10
+                print(f"   {idx}. {col}")
+            if len(df.columns) > 10:
+                print(f"   ... y {len(df.columns) - 10} columnas más")
+            print(f"📊 Total de filas: {len(df)}")
+            
+            # Mostrar ejemplo del primer registro (si existe)
+            if len(df) > 0:
+                print("📋 Ejemplo primer registro:")
+                primer_registro = df.iloc[0]
+                # Buscar campos clave
+                campos_clave = ['Código FID\nGIT', 'Código FID GIT', 'Unidad Constructiva', 'Identificador_1']
+                for col in df.columns:
+                    if any(clave.lower().replace('\n', '').replace(' ', '') in str(col).lower().replace('\n', '').replace(' ', '') 
+                           for clave in campos_clave):
+                        valor = primer_registro[col] if not pd.isna(primer_registro[col]) else 'VACÍO'
+                        print(f"   {col}: '{valor}'")
+            
+            # Convertir a lista de diccionarios
+            datos = []
+            for _, row in df.iterrows():
+                registro = {}
+                for col, val in row.items():
+                    if pd.isna(val):
+                        registro[col] = ""
+                    else:
+                        registro[col] = str(val).strip()
+                datos.append(registro)
+            
+            return datos
+            
+        except Exception as e:
+            raise Exception(f"Error leyendo hoja de conductores: {str(e)}")
+
+    def _extraer_campo_conductor(self, registro: Dict, campo_tipo: str) -> str:
+        """
+        Extrae un campo específico del registro de conductor,
+        buscando por diferentes variantes de nombres.
+        
+        Args:
+            registro: Diccionario con datos del conductor
+            campo_tipo: Tipo de campo a extraer
+                - 'codigo_fid_git': Código FID GIT
+                - 'unidad_constructiva': Unidad Constructiva
+                - 'identificador': Identificador (Identificador_1 o Identificador_2)
+                - 'fecha_instalacion': Fecha Instalación
+                - 'coordenada_x1': Coordenada X1 (Longitud)
+                - 'coordenada_y1': Coordenada Y1 (Latitud)
+                - 'coordenada_x2': Coordenada X2 (Longitud 2)
+                - 'coordenada_y2': Coordenada Y2 (Latitud 2)
+                - 'nivel_tension': Nivel de Tensión
+                - 'municipio': Municipio
+                - 'fases': Fases
+                - 'numero_conductores': Número de conductores
+                - 'clase': CLASE
+                - 'poblacion': POBLACION
+                - 'tipo': TIPO
+                - 'material': MATERIAL
+                - 'calibre': CALIBRE
+                
+        Returns:
+            Valor del campo o cadena vacía si no se encuentra
+        """
+        variantes = {
+            'codigo_fid_git': [
+                'Código FID\nGIT', 'Código FID GIT', 'Codigo FID GIT', 
+                'CODIGO_FID_GIT', 'código fid git', 'codigo fid git', 
+                'FID_GIT', 'FID GIT', 'Código FID_rep'
+            ],
+            'unidad_constructiva': [
+                'Unidad Constructiva', 'UNIDAD_CONSTRUCTIVA',
+                'unidad constructiva', 'UC', 'UNIDAD CONSTRUCTIVA'
+            ],
+            'identificador': [
+                'Identificador_1', 'Identificador_2', 'Identificador', 
+                'IDENTIFICADOR', 'identificador', 'ID', 'Id', 'ENLACE'
+            ],
+            'fecha_instalacion': [
+                'Fecha Instalacion\nDD/MM/YYYY', 'Fecha Instalacion DD/MM/YYYY', 
+                'Fecha Instalación', 'FECHA_INSTALACION', 'Fecha Instalacion', 
+                'fecha instalacion'
+            ],
+            'coordenada_x1': [
+                'Coordenada_X1\nLONGITUD', 'Coordenada_X1 LONGITUD', 
+                'Coordenada_X1', 'COORDENADA_X1', 'coordenada x1', 
+                'Coordenada X1', 'LONGITUD'
+            ],
+            'coordenada_y1': [
+                'Coordenada_Y1\nLATITUD', 'Coordenada_Y1 LATITUD',
+                'Coordenada_Y1', 'COORDENADA_Y1', 'coordenada y1',
+                'Coordenada Y1', 'LATITUD'
+            ],
+            'coordenada_x2': [
+                'Coordenada_X2\nLONGITUD2', 'Coordenada_X2 LONGITUD2',
+                'Coordenada_X2', 'COORDENADA_X2', 'coordenada x2',
+                'Coordenada X2', 'LONGITUD2'
+            ],
+            'coordenada_y2': [
+                'Coordenada_Y2\nLATITUD3', 'Coordenada_Y2 LATITUD3',
+                'Coordenada_Y2', 'COORDENADA_Y2', 'coordenada y2',
+                'Coordenada Y2', 'LATITUD3'
+            ],
+            'nivel_tension': [
+                'Nivel de Tension', 'Nivel de Tensión', 'NIVEL_TENSION',
+                'nivel tension', 'Nivel Tension'
+            ],
+            'municipio': [
+                'Municipio', 'MUNICIPIO', 'municipio'
+            ],
+            'fases': [
+                'Fases', 'FASES', 'fases'
+            ],
+            'numero_conductores': [
+                'Número de conductores', 'Numero de conductores',
+                'NUMERO_CONDUCTORES', 'numero conductores'
+            ],
+            'clase': [
+                'CLASE', 'Clase', 'clase'
+            ],
+            'poblacion': [
+                'POBLACION', 'Poblacion', 'poblacion', 'Población'
+            ],
+            'tipo': [
+                'TIPO', 'Tipo', 'tipo'
+            ],
+            'material': [
+                'MATERIAL', 'Material', 'material'
+            ],
+            'calibre': [
+                'CALIBRE', 'Calibre', 'calibre'
+            ]
+        }
+        
+        # Buscar el campo en el registro
+        nombres_posibles = variantes.get(campo_tipo, [])
+        
+        for nombre in nombres_posibles:
+            if nombre in registro:
+                valor = registro[nombre]
+                if valor and str(valor).strip() and str(valor).strip().lower() not in ('nan', 'none', 'null', ''):
+                    return str(valor).strip()
+        
+        # Búsqueda flexible (normalizada) - quitar saltos de línea y espacios
+        for key, value in registro.items():
+            if isinstance(key, str):
+                # Normalizar: quitar saltos de línea, espacios extras, guiones bajos
+                key_norm = key.lower().replace('\n', '').replace(' ', '').replace('_', '').strip()
+                for nombre in nombres_posibles:
+                    nombre_norm = nombre.lower().replace('\n', '').replace(' ', '').replace('_', '').strip()
+                    if key_norm == nombre_norm:
+                        if value and str(value).strip() and str(value).strip().lower() not in ('nan', 'none', 'null', ''):
+                            return str(value).strip()
+        
+        return ''
+
+    def _extraer_campo_específico(self, registro: Dict, nombre_campo: str) -> str:
+        """
+        Extrae un campo específico del registro por nombre exacto.
+        
+        Args:
+            registro: Diccionario con datos
+            nombre_campo: Nombre exacto del campo a buscar
+            
+        Returns:
+            Valor del campo o cadena vacía si no se encuentra
+        """
+        # Búsqueda exacta primero
+        if nombre_campo in registro:
+            valor = registro[nombre_campo]
+            if valor and str(valor).strip() and str(valor).strip().lower() not in ('nan', 'none', 'null', ''):
+                return str(valor).strip()
+        
+        # Búsqueda normalizada (sin espacios, saltos de línea)
+        nombre_norm = nombre_campo.lower().replace('\n', '').replace(' ', '').replace('_', '').strip()
+        for key, value in registro.items():
+            if isinstance(key, str):
+                key_norm = key.lower().replace('\n', '').replace(' ', '').replace('_', '').strip()
+                if key_norm == nombre_norm:
+                    if value and str(value).strip() and str(value).strip().lower() not in ('nan', 'none', 'null', ''):
+                        return str(value).strip()
+        
+        return ''
+
+    def _enriquecer_conductores_reposicion(self, datos: List[Dict]) -> List[Dict]:
+        """
+        Enriquece los datos de conductores que son REPOSICIÓN,
+        validando contra la BD y reemplazando coordenadas si difieren.
+        
+        Para REPOSICIÓN (tiene FID + UC):
+        - Convierte código operativo a FID si empieza con Z
+        - Consulta coordenadas en Oracle
+        - Reemplaza coordenadas del Excel con las de BD
+        
+        Args:
+            datos: Lista de registros de conductores
+            
+        Returns:
+            Lista de registros enriquecidos con coordenadas de BD
+        """
+        oracle_disponible = OracleHelper.test_connection()
+        
+        if not oracle_disponible:
+            print("⚠️ WARNING: Oracle no disponible, usando coordenadas del Excel")
+            return datos
+        
+        datos_enriquecidos = []
+        registros_enriquecidos = 0
+        
+        for i, registro in enumerate(datos):
+            fid_git = self._extraer_campo_conductor(registro, 'codigo_fid_git')
+            unidad_constructiva = self._extraer_campo_conductor(registro, 'unidad_constructiva')
+            
+            # Solo enriquecer si es REPOSICIÓN (tiene ambos campos)
+            if fid_git and unidad_constructiva:
+                print(f"🔍 REPOSICIÓN detectada en registro {i+1}: FID='{fid_git}', UC='{unidad_constructiva}'")
+                
+                # Convertir código operativo a FID si es necesario
+                fid_real = fid_git
+                if fid_git.upper().startswith('Z'):
+                    fid_convertido = OracleHelper.obtener_fid_desde_codigo_operativo(fid_git)
+                    if fid_convertido:
+                        fid_real = str(fid_convertido)
+                        print(f"  ✅ Código operativo '{fid_git}' → FID '{fid_real}'")
+                    else:
+                        print(f"  ⚠️ No se pudo convertir código operativo '{fid_git}' a FID")
+                
+                # Consultar coordenadas del conductor en Oracle
+                try:
+                    datos_oracle = self._consultar_conductor_oracle(fid_real)
+                    
+                    if datos_oracle:
+                        # Comparar y reemplazar coordenadas (nombres de BD Oracle)
+                        lat_excel = registro.get('coor_gps_lat', '')
+                        lon_excel = registro.get('coor_gps_lon', '')
+                        lat_oracle = datos_oracle.get('coor_gps_lat', '')
+                        lon_oracle = datos_oracle.get('coor_gps_lon', '')
+                        
+                        print(f"  📊 Coordenadas Excel: LAT={lat_excel}, LON={lon_excel}")
+                        print(f"  📊 Coordenadas Oracle: LAT={lat_oracle}, LON={lon_oracle}")
+                        
+                        # Reemplazar con datos de Oracle si existen
+                        if lat_oracle:
+                            registro['coor_gps_lat'] = lat_oracle
+                        if lon_oracle:
+                            registro['coor_gps_lon'] = lon_oracle
+                        
+                        # También actualizar coordenadas del Nodo 2 si vienen de Oracle
+                        lat2_oracle = datos_oracle.get('Coordenada_Y2', '')
+                        lon2_oracle = datos_oracle.get('Coordenada_X2', '')
+                        if lat2_oracle:
+                            registro['Coordenada_Y2'] = lat2_oracle
+                        if lon2_oracle:
+                            registro['Coordenada_X2'] = lon2_oracle
+                        
+                        registros_enriquecidos += 1
+                        print("  ✅ Coordenadas actualizadas desde BD")
+                    else:
+                        print(f"  ⚠️ No se encontraron datos en Oracle para FID '{fid_real}'")
+                
+                except Exception as e:
+                    print(f"  ❌ Error consultando Oracle para FID '{fid_real}': {str(e)}")
+            
+            datos_enriquecidos.append(registro)
+        
+        if registros_enriquecidos > 0:
+            print("\n📊 Resumen enriquecimiento Oracle:")
+            print(f"   ✅ {registros_enriquecidos} registros REPOSICIÓN enriquecidos con coordenadas de BD")
+        
+        return datos_enriquecidos
+    
+    def _consultar_conductor_oracle(self, codigo: str):
+        """
+        Consulta datos de un conductor en Oracle por su código.
+        
+        Query basada en la proporcionada:
+        SELECT coordenadas y otros campos desde econ_pri_at, ccomun, cpropietario
+        
+        Args:
+            codigo: Código del conductor (ej: 'L129251', 'AMVLS75784', 'GLVL38505')
+            
+        Returns:
+            Dict con datos del conductor o None si no existe
+        """
+        try:
+            # Query para obtener datos completos del conductor
+            # Basada en: econ_pri_at JOIN ccomun JOIN cpropietario
+            # IMPORTANTE: Buscar por cp.codigo (código operativo como 'L129251')
+            # Usa USING (g3e_fid) para simplificar los JOINs
+            query = """
+                SELECT 
+                    c.coor_gps_lon,
+                    c.coor_gps_lat,
+                    c.estado,
+                    c.ubicacion,
+                    c.codigo_material,
+                    c.fecha_instalacion,
+                    c.fecha_operacion,
+                    c.proyecto,
+                    c.empresa_origen,
+                    c.observaciones,
+                    c.tipo_proyecto,
+                    c.id_mercado,
+                    c.clasificacion_mercado,
+                    c.uc,
+                    c.estado_salud,
+                    c.ot_maximo,
+                    c.codigo_marcacion,
+                    c.salinidad,
+                    cp.uso,
+                    pr.propietario_1,
+                    pr.porcentaje_prop_1,
+                    cp.g3e_fid,
+                    cp.codigo
+                FROM econ_pri_at cp
+                JOIN ccomun c USING (g3e_fid)
+                LEFT JOIN cpropietario pr USING (g3e_fid)
+                WHERE cp.codigo = :codigo
+                AND ROWNUM = 1
+            """
+            
+            with OracleHelper.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(query, {'codigo': codigo})
+                    row = cursor.fetchone()
+                    
+                    if row:
+                        # Extraer columnas
+                        columns = [col[0] for col in cursor.description]
+                        datos = dict(zip(columns, row))
+                        
+                        # Mapear todos los 21 campos de Oracle
+                        result = {}
+                        
+                        # Coordenadas (críticas para reposición)
+                        if datos.get('COOR_GPS_LAT'):
+                            result['coor_gps_lat'] = str(datos['COOR_GPS_LAT'])
+                        if datos.get('COOR_GPS_LON'):
+                            result['coor_gps_lon'] = str(datos['COOR_GPS_LON'])
+                        
+                        # Campos de estado y ubicación
+                        if datos.get('ESTADO'):
+                            result['estado'] = str(datos['ESTADO'])
+                        if datos.get('UBICACION'):
+                            result['ubicacion'] = str(datos['UBICACION'])
+                        if datos.get('CODIGO_MATERIAL'):
+                            result['codigo_material'] = str(datos['CODIGO_MATERIAL'])
+                        
+                        # Fechas
+                        if datos.get('FECHA_INSTALACION'):
+                            result['fecha_instalacion'] = str(datos['FECHA_INSTALACION'])
+                        if datos.get('FECHA_OPERACION'):
+                            result['fecha_operacion'] = str(datos['FECHA_OPERACION'])
+                        
+                        # Proyecto y empresa
+                        if datos.get('PROYECTO'):
+                            result['proyecto'] = str(datos['PROYECTO'])
+                        if datos.get('EMPRESA_ORIGEN'):
+                            result['empresa_origen'] = str(datos['EMPRESA_ORIGEN'])
+                        if datos.get('OBSERVACIONES'):
+                            result['observaciones'] = str(datos['OBSERVACIONES'])
+                        if datos.get('TIPO_PROYECTO'):
+                            result['tipo_proyecto'] = str(datos['TIPO_PROYECTO'])
+                        
+                        # Mercado
+                        if datos.get('ID_MERCADO'):
+                            result['id_mercado'] = str(datos['ID_MERCADO'])
+                        if datos.get('CLASIFICACION_MERCADO'):
+                            result['clasificacion_mercado'] = str(datos['CLASIFICACION_MERCADO'])
+                        
+                        # UC y estado
+                        if datos.get('UC'):
+                            result['uc'] = str(datos['UC'])
+                        if datos.get('ESTADO_SALUD'):
+                            result['estado_salud'] = str(datos['ESTADO_SALUD'])
+                        if datos.get('OT_MAXIMO'):
+                            result['ot_maximo'] = str(datos['OT_MAXIMO'])
+                        
+                        # Otros campos técnicos
+                        if datos.get('CODIGO_MARCACION'):
+                            result['codigo_marcacion'] = str(datos['CODIGO_MARCACION'])
+                        if datos.get('SALINIDAD'):
+                            result['salinidad'] = str(datos['SALINIDAD'])
+                        if datos.get('USO'):
+                            result['uso'] = str(datos['USO'])
+                        
+                        # Propietario
+                        if datos.get('PROPIETARIO_1'):
+                            result['propietario_1'] = str(datos['PROPIETARIO_1'])
+                        if datos.get('PORCENTAJE_PROP_1'):
+                            result['porcentaje_prop_1'] = str(datos['PORCENTAJE_PROP_1'])
+                        
+                        return result
+                    else:
+                        return None
+                        
+        except Exception as e:
+            print(f"❌ Error consultando conductor en Oracle: {str(e)}")
+            return None
 
 class ClasificadorEstructuras:
     """Aplica las reglas de clasificación de estructuras según las reglas de negocio"""

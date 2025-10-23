@@ -103,7 +103,7 @@
             <span class="text-sm text-gray-500" id="registros-text">{{ proceso.registros_procesados }} / {{ proceso.registros_totales }}</span>
         </div>
         <div class="w-full bg-gray-200 rounded-full h-3">
-            <div id="progress-bar" class="h-3 bg-gradient-to-r from-secondary to-secondary-light rounded-full transition-all duration-300" data-progress="{{ proceso.progreso_porcentaje }}"></div>
+            <div id="progress-bar" class="h-3 rounded-full transition-all duration-300" style="background: linear-gradient(to right, #2D5A87, #3a6a9f);" data-progress="{{ proceso.progreso_porcentaje }}"></div>
         </div>
         <p class="text-xs text-gray-500 mt-1">{{ proceso.progreso_porcentaje }}% completado</p>
     </div>
@@ -360,29 +360,46 @@
     
     <!-- TÍTULO: ESTRUCTURAS -->
     <div class="mb-8">
-        <div class="flex items-center mb-4 pb-2 border-b-2 border-primary-600">
-            <svg class="w-6 h-6 text-primary-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
-            </svg>
-            <h4 class="text-lg font-bold text-primary-700 uppercase tracking-wide">📦 Estructuras</h4>
+        <div class="flex items-center justify-between mb-4 pb-2 border-b-2 border-primary-600">
+            <div class="flex items-center">
+                <svg class="w-6 h-6 text-primary-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                </svg>
+                <h4 class="text-lg font-bold text-primary-700 uppercase tracking-wide">Estructuras</h4>
+            </div>
+            
+            <!-- Botón Descargar Todos - Estructuras -->
+            <button onclick="descargarTodosEstructuras()" 
+                    class="inline-flex items-center px-4 py-2 border-2 border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 shadow-sm hover:shadow-md">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                </svg>
+                <span class="font-semibold">Descargar Todos</span>
+            </button>
         </div>
         
         <!-- SUBTÍTULO: Nuevo -->
         <div class="mb-4">
             <div class="flex items-center mb-3 pl-4">
-                <div class="w-2 h-2 bg-slate-600 rounded-full mr-2"></div>
+                <div class="w-2 h-2 rounded-full mr-2" style="background-color: #2D5A87;"></div>
                 <h5 class="text-base font-semibold text-gray-700">Nuevo</h5>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-8">
                 <a href="{% url 'estructuras:descargar_archivo' proceso.id 'txt' %}" 
-                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-slate-700 to-slate-600 hover:from-slate-800 hover:to-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-600 transition duration-200 shadow-sm hover:shadow-md">
+                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white transition duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2"
+                   style="background: linear-gradient(to right, #2D5A87, #3a6a9f);"
+                   onmouseover="this.style.background='linear-gradient(to right, #1e3a5f, #2D5A87)'"
+                   onmouseout="this.style.background='linear-gradient(to right, #2D5A87, #3a6a9f)'">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
                     📄 TXT Nuevo
                 </a>
                 <a href="{% url 'estructuras:descargar_archivo' proceso.id 'xml' %}" 
-                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-600 transition duration-200 shadow-sm hover:shadow-md">
+                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white transition duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2"
+                   style="background: linear-gradient(to right, #008060, #00a078);"
+                   onmouseover="this.style.background='linear-gradient(to right, #006048, #008060)'"
+                   onmouseout="this.style.background='linear-gradient(to right, #008060, #00a078)'">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
@@ -394,19 +411,25 @@
         <!-- SUBTÍTULO: Bajas -->
         <div class="mb-4">
             <div class="flex items-center mb-3 pl-4">
-                <div class="w-2 h-2 bg-slate-600 rounded-full mr-2"></div>
+                <div class="w-2 h-2 rounded-full mr-2" style="background-color: #2D5A87;"></div>
                 <h5 class="text-base font-semibold text-gray-700">Bajas</h5>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-8">
                 <a href="{% url 'estructuras:descargar_archivo' proceso.id 'txt_baja' %}" 
-                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-slate-700 to-slate-600 hover:from-slate-800 hover:to-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-600 transition duration-200 shadow-sm hover:shadow-md">
+                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white transition duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2"
+                   style="background: linear-gradient(to right, #2D5A87, #3a6a9f);"
+                   onmouseover="this.style.background='linear-gradient(to right, #1e3a5f, #2D5A87)'"
+                   onmouseout="this.style.background='linear-gradient(to right, #2D5A87, #3a6a9f)'">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
                     📄 TXT Baja
                 </a>
                 <a href="{% url 'estructuras:descargar_archivo' proceso.id 'xml_baja' %}" 
-                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-600 transition duration-200 shadow-sm hover:shadow-md">
+                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white transition duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2"
+                   style="background: linear-gradient(to right, #008060, #00a078);"
+                   onmouseover="this.style.background='linear-gradient(to right, #006048, #008060)'"
+                   onmouseout="this.style.background='linear-gradient(to right, #008060, #00a078)'">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
@@ -418,19 +441,25 @@
         <!-- SUBTÍTULO: Normas -->
         <div class="mb-4">
             <div class="flex items-center mb-3 pl-4">
-                <div class="w-2 h-2 bg-slate-600 rounded-full mr-2"></div>
+                <div class="w-2 h-2 rounded-full mr-2" style="background-color: #2D5A87;"></div>
                 <h5 class="text-base font-semibold text-gray-700">Normas</h5>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-8">
                 <a href="{% url 'estructuras:descargar_archivo' proceso.id 'norma_txt' %}" 
-                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-slate-700 to-slate-600 hover:from-slate-800 hover:to-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-600 transition duration-200 shadow-sm hover:shadow-md">
+                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white transition duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2"
+                   style="background: linear-gradient(to right, #2D5A87, #3a6a9f);"
+                   onmouseover="this.style.background='linear-gradient(to right, #1e3a5f, #2D5A87)'"
+                   onmouseout="this.style.background='linear-gradient(to right, #2D5A87, #3a6a9f)'">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
                     📄 TXT Norma
                 </a>
                 <a href="{% url 'estructuras:descargar_archivo' proceso.id 'norma_xml' %}" 
-                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-600 transition duration-200 shadow-sm hover:shadow-md">
+                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white transition duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2"
+                   style="background: linear-gradient(to right, #008060, #00a078);"
+                   onmouseover="this.style.background='linear-gradient(to right, #006048, #008060)'"
+                   onmouseout="this.style.background='linear-gradient(to right, #008060, #00a078)'">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                     </svg>
@@ -442,33 +471,80 @@
     
     <!-- TÍTULO: CONDUCTORES -->
     <div class="mb-6">
-        <div class="flex items-center mb-4 pb-2 border-b-2 border-blue-600">
-            <svg class="w-6 h-6 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-            </svg>
-            <h4 class="text-lg font-bold text-blue-700 uppercase tracking-wide">⚡ Conductores</h4>
+        <div class="flex items-center justify-between mb-4 pb-2 border-b-2 border-primary-600">
+            <div class="flex items-center">
+                <svg class="w-6 h-6 text-primary-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+                <h4 class="text-lg font-bold text-primary-700 uppercase tracking-wide">Conductores</h4>
+            </div>
+            
+            <!-- Botón Descargar Todos - Conductores -->
+            <button onclick="descargarTodosConductores()" 
+                    class="inline-flex items-center px-4 py-2 border-2 border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 shadow-sm hover:shadow-md">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                </svg>
+                <span class="font-semibold">Descargar Todos</span>
+            </button>
         </div>
         
-        <!-- SUBTÍTULO: Línea -->
+        <!-- SUBTÍTULO: Nuevo -->
         <div class="mb-4">
             <div class="flex items-center mb-3 pl-4">
-                <div class="w-2 h-2 bg-slate-600 rounded-full mr-2"></div>
-                <h5 class="text-base font-semibold text-gray-700">Línea</h5>
+                <div class="w-2 h-2 rounded-full mr-2" style="background-color: #2D5A87;"></div>
+                <h5 class="text-base font-semibold text-gray-700">Nuevo</h5>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-8">
-                <a href="{% url 'estructuras:descargar_archivo' proceso.id 'txt_linea' %}" 
-                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-slate-700 to-slate-600 hover:from-slate-800 hover:to-slate-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-600 transition duration-200 shadow-sm hover:shadow-md">
+                <a id="btn-conductor-txt-linea" href="{% url 'estructuras:descargar_archivo' proceso.id 'txt_linea' %}" 
+                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white transition duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2"
+                   style="background: linear-gradient(to right, #2D5A87, #3a6a9f);"
+                   onmouseover="this.style.background='linear-gradient(to right, #1e3a5f, #2D5A87)'"
+                   onmouseout="this.style.background='linear-gradient(to right, #2D5A87, #3a6a9f)'">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
-                    📄 TXT Línea
+                    TXT Línea
                 </a>
-                <a href="{% url 'estructuras:descargar_archivo' proceso.id 'xml_linea' %}" 
-                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-600 transition duration-200 shadow-sm hover:shadow-md">
+                <a id="btn-conductor-xml-linea" href="{% url 'estructuras:descargar_archivo' proceso.id 'xml_linea' %}" 
+                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white transition duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2"
+                   style="background: linear-gradient(to right, #008060, #00a078);"
+                   onmouseover="this.style.background='linear-gradient(to right, #006048, #008060)'"
+                   onmouseout="this.style.background='linear-gradient(to right, #008060, #00a078)'">
                     <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
-                    📋 XML Línea
+                    XML Línea
+                </a>
+            </div>
+        </div>
+        
+        <!-- SUBTÍTULO: Bajas -->
+        <div class="mb-4">
+            <div class="flex items-center mb-3 pl-4">
+                <div class="w-2 h-2 rounded-full bg-red-500 mr-2"></div>
+                <h5 class="text-base font-semibold text-gray-700">Bajas</h5>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-8">
+                <a id="btn-conductor-txt-baja-linea" href="{% url 'estructuras:descargar_archivo' proceso.id 'txt_baja_linea' %}" 
+                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white transition duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2"
+                   style="background: linear-gradient(to right, #2D5A87, #3a6a9f);"
+                   onmouseover="this.style.background='linear-gradient(to right, #1e3a5f, #2D5A87)'"
+                   onmouseout="this.style.background='linear-gradient(to right, #2D5A87, #3a6a9f)'">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    TXT Línea Baja
+                </a>
+                <a id="btn-conductor-xml-baja-linea" href="{% url 'estructuras:descargar_archivo' proceso.id 'xml_baja_linea' %}" 
+                   class="inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-md text-white transition duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-offset-2"
+                   style="background: linear-gradient(to right, #2D5A87, #3a6a9f);"
+                   onmouseover="this.style.background='linear-gradient(to right, #1e3a5f, #2D5A87)'"
+                   onmouseout="this.style.background='linear-gradient(to right, #2D5A87, #3a6a9f)'">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    XML Línea Baja
                 </a>
             </div>
         </div>
@@ -799,6 +875,57 @@ function renderTablaErrores(errores) {
         });
         panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
+}
+
+// Función para simular clic con delay (sin logs)
+function simularClicConDelay(elemento, delay = 1000) {
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            if (elemento) {
+                elemento.click();
+            }
+            resolve();
+        }, delay);
+    });
+}
+
+// Descargar todos los archivos de Estructuras (simula clic en cada botón)
+async function descargarTodosEstructuras() {
+    // Obtener todos los enlaces de descarga de la sección Estructuras
+    const botonesEstructuras = [
+        { selector: "a[href*='/descargar/txt/']", nombre: 'TXT Nuevo' },
+        { selector: "a[href*='/descargar/xml/']", nombre: 'XML Nuevo' },
+        { selector: "a[href*='/descargar/txt_baja/']", nombre: 'TXT Baja' },
+        { selector: "a[href*='/descargar/xml_baja/']", nombre: 'XML Baja' },
+        { selector: "a[href*='/descargar/norma_txt/']", nombre: 'TXT Norma' },
+        { selector: "a[href*='/descargar/norma_xml/']", nombre: 'XML Norma' }
+    ];
+    
+    for (const boton of botonesEstructuras) {
+        const elemento = document.querySelector(boton.selector);
+        if (elemento) {
+            await simularClicConDelay(elemento, 1000);
+        }
+    }
+}
+
+// Descargar todos los archivos de Conductores (simula clic en cada botón)
+async function descargarTodosConductores() {
+    // Buscar cada botón de forma única, evitando ambigüedad
+    // Usamos querySelector pero con selectores más específicos
+    const todosEnlaces = Array.from(document.querySelectorAll("a[href*='/descargar/']"));
+    
+    // Filtrar los enlaces de conductores (contienen 'linea' en la URL)
+    const txtLinea = todosEnlaces.find(a => a.href.includes('/txt_linea/') && !a.href.includes('baja'));
+    const xmlLinea = todosEnlaces.find(a => a.href.includes('/xml_linea/') && !a.href.includes('baja'));
+    const txtBajaLinea = todosEnlaces.find(a => a.href.includes('/txt_baja_linea/'));
+    const xmlBajaLinea = todosEnlaces.find(a => a.href.includes('/xml_baja_linea/'));
+    
+    // Descargar cada archivo en orden
+    if (txtLinea) await simularClicConDelay(txtLinea, 1000);
+    if (xmlLinea) await simularClicConDelay(xmlLinea, 1000);
+    if (txtBajaLinea) await simularClicConDelay(txtBajaLinea, 1000);
+    if (xmlBajaLinea) await simularClicConDelay(xmlBajaLinea, 1000);
 }
 </script>
 {% endblock %}

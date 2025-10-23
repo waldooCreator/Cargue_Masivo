@@ -477,13 +477,13 @@ def estadisticas_clasificacion(request, proceso_id):
 
 @require_http_methods(["GET"])
 def descargar_archivo(request, proceso_id, tipo_archivo):
-    """Descarga archivo generado (txt, xml, norma_txt, norma_xml, txt_baja, xml_baja, txt_linea, xml_linea)"""
+    """Descarga archivo generado (txt, xml, norma_txt, norma_xml, txt_baja, xml_baja, txt_linea, xml_linea, txt_baja_linea, xml_baja_linea)"""
     proceso = get_object_or_404(ProcesoEstructura, id=proceso_id)
     
     if not proceso.archivos_generados:
         raise Http404("No hay archivos generados para este proceso")
 
-    if tipo_archivo not in ['txt', 'xml', 'norma_txt', 'norma_xml', 'txt_baja', 'xml_baja', 'txt_linea', 'xml_linea']:
+    if tipo_archivo not in ['txt', 'xml', 'norma_txt', 'norma_xml', 'txt_baja', 'xml_baja', 'txt_linea', 'xml_linea', 'txt_baja_linea', 'xml_baja_linea']:
         raise Http404("Tipo de archivo no válido")
 
     # Definir nombres de descarga fijos y descriptivos sin cambiar los nombres físicos
@@ -496,6 +496,8 @@ def descargar_archivo(request, proceso_id, tipo_archivo):
         'xml_baja': 'estructuras_xml_baja.xml',
         'txt_linea': 'conductores_txt_linea.txt',
         'xml_linea': 'conductores_xml_linea.xml',
+        'txt_baja_linea': 'conductores_txt_baja_linea.txt',
+        'xml_baja_linea': 'conductores_xml_baja_linea.xml',
     }
     
     # Manejo especial para txt_baja
@@ -583,15 +585,121 @@ def descargar_archivo(request, proceso_id, tipo_archivo):
             print(f"Error generando norma XML: {str(e)}")
             raise Http404("Error al generar archivo NORMA_XML")
     
-    # Manejo especial para txt_linea (CONDUCTORES)
+    # Manejo especial para txt_linea (CONDUCTORES - NUEVO)
     if tipo_archivo == 'txt_linea':
-        # Por ahora retornamos un archivo placeholder hasta implementar la lógica real
-        raise Http404("TXT Línea: Funcionalidad en desarrollo")
+        try:
+            print(f"Generando archivo TXT Línea NUEVO para proceso {proceso.id}")
+            from .services import FileGenerator
+            generator = FileGenerator(proceso)
+            filename_generated = generator.generar_txt_linea()
+            
+            # Guardar en el proceso
+            if not proceso.archivos_generados:
+                proceso.archivos_generados = {}
+            proceso.archivos_generados['txt_linea'] = filename_generated
+            proceso.save()
+            
+            # Construir ruta completa
+            generated_filepath = os.path.join(settings.MEDIA_ROOT, 'generated', filename_generated)
+            
+            if not os.path.exists(generated_filepath):
+                raise Http404("Archivo TXT Línea generado no encontrado")
+            
+            return FileResponse(
+                open(generated_filepath, 'rb'), 
+                as_attachment=True, 
+                filename=nombres_descarga.get('txt_linea', filename_generated)
+            )
+        except Exception as e:
+            print(f"Error generando TXT Línea: {str(e)}")
+            raise Http404(f"Error al generar archivo TXT Línea: {str(e)}")
     
-    # Manejo especial para xml_linea (CONDUCTORES)
+    # Manejo especial para txt_baja_linea (CONDUCTORES - BAJA)
+    if tipo_archivo == 'txt_baja_linea':
+        try:
+            print(f"Generando archivo TXT Línea BAJA para proceso {proceso.id}")
+            from .services import FileGenerator
+            generator = FileGenerator(proceso)
+            filename_generated = generator.generar_txt_baja_linea()
+            
+            # Guardar en el proceso
+            if not proceso.archivos_generados:
+                proceso.archivos_generados = {}
+            proceso.archivos_generados['txt_baja_linea'] = filename_generated
+            proceso.save()
+            
+            # Construir ruta completa
+            generated_filepath = os.path.join(settings.MEDIA_ROOT, 'generated', filename_generated)
+            
+            if not os.path.exists(generated_filepath):
+                raise Http404("Archivo TXT Línea BAJA generado no encontrado")
+            
+            return FileResponse(
+                open(generated_filepath, 'rb'), 
+                as_attachment=True, 
+                filename='conductores_linea_baja.txt'
+            )
+        except Exception as e:
+            print(f"Error generando TXT Línea BAJA: {str(e)}")
+            raise Http404(f"Error al generar archivo TXT Línea BAJA: {str(e)}")
+    
+    # Manejo especial para xml_linea (CONDUCTORES - NUEVO)
     if tipo_archivo == 'xml_linea':
-        # Por ahora retornamos un archivo placeholder hasta implementar la lógica real
-        raise Http404("XML Línea: Funcionalidad en desarrollo")
+        try:
+            print(f"Generando archivo XML Línea NUEVO para proceso {proceso.id}")
+            from .services import FileGenerator
+            generator = FileGenerator(proceso)
+            filename_generated = generator.generar_xml_linea()
+            
+            # Guardar en el proceso
+            if not proceso.archivos_generados:
+                proceso.archivos_generados = {}
+            proceso.archivos_generados['xml_linea'] = filename_generated
+            proceso.save()
+            
+            # Construir ruta completa
+            generated_filepath = os.path.join(settings.MEDIA_ROOT, 'generated', filename_generated)
+            
+            if not os.path.exists(generated_filepath):
+                raise Http404("Archivo XML Línea generado no encontrado")
+            
+            return FileResponse(
+                open(generated_filepath, 'rb'), 
+                as_attachment=True, 
+                filename=nombres_descarga.get('xml_linea', filename_generated)
+            )
+        except Exception as e:
+            print(f"Error generando XML Línea: {str(e)}")
+            raise Http404(f"Error al generar archivo XML Línea: {str(e)}")
+    
+    # Manejo especial para xml_baja_linea (CONDUCTORES - BAJA)
+    if tipo_archivo == 'xml_baja_linea':
+        try:
+            print(f"Generando archivo XML Línea BAJA para proceso {proceso.id}")
+            from .services import FileGenerator
+            generator = FileGenerator(proceso)
+            filename_generated = generator.generar_xml_baja_linea()
+            
+            # Guardar en el proceso
+            if not proceso.archivos_generados:
+                proceso.archivos_generados = {}
+            proceso.archivos_generados['xml_baja_linea'] = filename_generated
+            proceso.save()
+            
+            # Construir ruta completa
+            generated_filepath = os.path.join(settings.MEDIA_ROOT, 'generated', filename_generated)
+            
+            if not os.path.exists(generated_filepath):
+                raise Http404("Archivo XML Línea BAJA generado no encontrado")
+            
+            return FileResponse(
+                open(generated_filepath, 'rb'), 
+                as_attachment=True, 
+                filename='conductores_linea_baja.xml'
+            )
+        except Exception as e:
+            print(f"Error generando XML Línea BAJA: {str(e)}")
+            raise Http404(f"Error al generar archivo XML Línea BAJA: {str(e)}")
     
     # Manejo normal para otros tipos de archivo
     filename = proceso.archivos_generados.get(tipo_archivo)
